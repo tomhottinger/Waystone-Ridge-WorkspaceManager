@@ -1,0 +1,480 @@
+// Kein Konsolenfenster im Normalbetrieb. Wird `--debug` übergeben, beschafft sich
+// die App zur Laufzeit eine Konsole (siehe `logging::init`).
+#![windows_subsystem = "windows"]
+
+//! Workspace Manager für Windows.
+//!
+//! Hintergrundprozess mit Tray-Icon, der benannte Workspaces verwaltet. Beim
+//! Aktivieren eines Workspace werden nur dessen Fenster angezeigt, alle anderen
+//! verwalteten Fenster versteckt (`ShowWindow(SW_HIDE)`). Beim Beenden werden
+//! alle versteckten Fenster wieder sichtbar gemacht.
+
+mod cli;
+mod config;
+mod hook;
+mod hotkeys;
+mod logging;
+mod monitors;
+mod windows;
+mod workspace;
+
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+
+use ::windows::core::w;
+use ::windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use ::windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use ::windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+    GetWindowLongPtrW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, TranslateMessage,
+    CW_USEDEFAULT, GWLP_USERDATA, HHOOK, HMENU, MSG, WINDOW_EX_STYLE, WM_DESTROY, WM_DISPLAYCHANGE,
+    WM_HOTKEY, WNDCLASSW, WS_OVERLAPPED,
+};
+
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+
+use hotkeys::Action;
+use workspace::WorkspaceManager;
+
+/// Aktion eines Menüeintrags im Tray.
+#[derive(Debug, Clone)]
+enum MenuAction {
+    Activate(u32),
+    Quit,
+}
+
+/// Gesamter Anwendungszustand, erreichbar aus der Fensterprozedur über
+/// `GWLP_USERDATA` und aus der Nachrichtenschleife über den Rohzeiger.
+struct AppState {
+    manager: WorkspaceManager,
+    /// Hotkey-ID → Aktion.
+    actions: HashMap<i32, Action>,
+    /// Vergebene Hotkey-IDs (zum Deregistrieren).
+    hotkey_ids: Vec<i32>,
+    /// Menü-Eintrag-ID → Aktion.
+    menu_actions: HashMap<String, MenuAction>,
+    /// Workspace-ID → Menü-Eintrag (zum Setzen des Häkchens am aktiven Workspace).
+    ws_check_items: HashMap<u32, CheckMenuItem>,
+    /// Tray-Icon (lebt, solange die App läuft).
+    tray: TrayIcon,
+    /// Eigenes (verstecktes) Fenster für Hotkey- und Display-Nachrichten.
+    hwnd: HWND,
+    /// Optionaler Low-Level-Keyboard-Hook (Fallback für reservierte Hotkeys).
+    keyboard_hook: Option<HHOOK>,
+    /// Zuletzt bekannte Monitor-IDs (für Änderungserkennung).
+    last_monitor_ids: Vec<String>,
+}
+
+impl AppState {
+    /// Aktualisiert Tray-Tooltip und Häkchen-Markierung auf den aktiven Workspace.
+    fn refresh_tray(&self) {
+        let current = self.manager.current;
+        let text = format!(
+            "Workspace Manager – aktiv: {} ({})",
+            current,
+            self.manager.name_of(current)
+        );
+        let _ = self.tray.set_tooltip(Some(text));
+
+        // Nur der aktive Workspace erhält ein Häkchen.
+        for (id, item) in &self.ws_check_items {
+            item.set_checked(*id == current);
+        }
+    }
+}
+
+fn main() {
+    if let Err(e) = run() {
+        report_fatal_error(&e);
+        std::process::exit(1);
+    }
+}
+
+/// Eigentlicher Programmablauf. Fehler werden von `main` per MessageBox angezeigt,
+/// da im Normalbetrieb keine Konsole existiert.
+fn run() -> Result<()> {
+    // 0. Kommandozeile parsen und Logging einrichten (Konsole nur bei --debug,
+    //    Logdatei nur bei --log).
+    let cli = cli::Cli::parse()?;
+    logging::init(cli.debug, cli.log.as_deref())?;
+
+    tracing::info!("Workspace Manager startet");
+
+    // 1.–3. Konfiguration laden und validieren.
+    let cfg = config::load_or_create(cli.config.as_deref())?;
+
+    // 4. WorkspaceManager erzeugen.
+    let mut manager = WorkspaceManager::new(&cfg);
+    let start_ws = manager.current;
+
+    // 5. Aktuelle Fenster dem Start-Workspace zuordnen und Sichtbarkeit setzen.
+    manager.assign_all_visible(start_ws);
+    manager.apply_visibility();
+
+    // Verstecktes Fenster für Nachrichten erzeugen.
+    let hwnd = create_message_window().context("Nachrichtenfenster erzeugen")?;
+
+    // Hotkeys registrieren (6.). Reservierte Kombis landen im Keyboard-Hook.
+    let (actions, hotkey_ids) = register_hotkeys(hwnd, &cfg);
+
+    // Keyboard-Hook nur installieren, wenn mindestens ein Hotkey ihn benötigt.
+    hook::set_hwnd(hwnd);
+    let keyboard_hook = if hook::is_empty() {
+        None
+    } else {
+        match hook::install() {
+            Ok(h) => {
+                tracing::info!("Low-Level-Keyboard-Hook installiert (für reservierte Hotkeys)");
+                Some(h)
+            }
+            Err(e) => {
+                tracing::warn!("Keyboard-Hook konnte nicht installiert werden: {}", e);
+                None
+            }
+        }
+    };
+
+    // Tray-Icon mit Menü aufbauen.
+    let (tray, menu_actions, ws_check_items) =
+        build_tray(&cfg, manager.current).context("Tray-Icon erzeugen")?;
+
+    let last_monitor_ids = monitors::current_ids();
+
+    // Zustand boxen und Zeiger im Fenster hinterlegen.
+    let state = Box::new(AppState {
+        manager,
+        actions,
+        hotkey_ids,
+        menu_actions,
+        ws_check_items,
+        tray,
+        hwnd,
+        keyboard_hook,
+        last_monitor_ids,
+    });
+    let state_ptr = Box::into_raw(state);
+    unsafe {
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
+        (*state_ptr).refresh_tray();
+    }
+
+    tracing::info!("Bereit. Hotkeys aktiv, Tray-Icon angelegt.");
+
+    // 7. Nachrichtenschleife.
+    run_message_loop(state_ptr);
+
+    // Aufräumen: Zustand zurücknehmen, Fenster zerstören.
+    let mut state = unsafe { Box::from_raw(state_ptr) };
+    cleanup(&mut state);
+    unsafe {
+        let _ = DestroyWindow(hwnd);
+    }
+
+    tracing::info!("Workspace Manager beendet");
+    Ok(())
+}
+
+/// Zeigt einen fatalen Startfehler in einer MessageBox an (es gibt im
+/// Normalbetrieb keine Konsole) und protokolliert ihn zusätzlich, falls bereits
+/// ein Logger aktiv ist.
+fn report_fatal_error(err: &anyhow::Error) {
+    use ::windows::core::PCWSTR;
+    use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+
+    tracing::error!("Fataler Fehler: {:#}", err);
+
+    let text: Vec<u16> = format!("{err:#}")
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let caption: Vec<u16> = "Workspace Manager"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        MessageBoxW(
+            HWND::default(),
+            PCWSTR(text.as_ptr()),
+            PCWSTR(caption.as_ptr()),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+/// Registriert die in der Konfiguration definierten Hotkeys.
+fn register_hotkeys(hwnd: HWND, cfg: &config::Config) -> (HashMap<i32, Action>, Vec<i32>) {
+    let mut actions: HashMap<i32, Action> = HashMap::new();
+    let mut ids: Vec<i32> = Vec::new();
+    let mut next_id: i32 = 1;
+
+    for ws in &cfg.workspaces {
+        if let Some(spec) = &ws.activate_hotkey {
+            register_one(hwnd, spec, Action::Activate(ws.id), &mut next_id, &mut actions, &mut ids);
+        }
+        if let Some(spec) = &ws.move_window_hotkey {
+            register_one(
+                hwnd,
+                spec,
+                Action::MoveWindow(ws.id),
+                &mut next_id,
+                &mut actions,
+                &mut ids,
+            );
+        }
+    }
+    (actions, ids)
+}
+
+fn register_one(
+    hwnd: HWND,
+    spec: &str,
+    action: Action,
+    next_id: &mut i32,
+    actions: &mut HashMap<i32, Action>,
+    ids: &mut Vec<i32>,
+) {
+    let parsed = match hotkeys::parse(spec) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("Hotkey '{}' nicht verstanden: {}", spec, e);
+            return;
+        }
+    };
+
+    let id = *next_id;
+    *next_id += 1;
+
+    match hotkeys::register(hwnd, id, &parsed) {
+        Ok(()) => {
+            actions.insert(id, action);
+            ids.push(id);
+            tracing::info!("Hotkey '{}' via RegisterHotKey registriert (id {})", spec, id);
+        }
+        Err(e) => {
+            // Reserviert (z. B. Win+N) -> Fallback auf den Low-Level-Keyboard-Hook.
+            hook::add_entry(parsed.mod_bits(), parsed.vk, id);
+            actions.insert(id, action);
+            tracing::info!(
+                "Hotkey '{}' von RegisterHotKey abgelehnt ({}); Fallback auf Keyboard-Hook (id {})",
+                spec,
+                e,
+                id
+            );
+        }
+    }
+}
+
+/// Baut das Tray-Icon mit Menü auf und liefert die Zuordnung Menü-ID → Aktion
+/// sowie die Häkchen-Einträge je Workspace-ID. `current` erhält das Häkchen.
+fn build_tray(
+    cfg: &config::Config,
+    current: u32,
+) -> Result<(TrayIcon, HashMap<String, MenuAction>, HashMap<u32, CheckMenuItem>)> {
+    let menu = Menu::new();
+    let mut menu_actions: HashMap<String, MenuAction> = HashMap::new();
+    let mut ws_check_items: HashMap<u32, CheckMenuItem> = HashMap::new();
+
+    let header = MenuItem::new("Workspace aktivieren:", false, None);
+    menu.append(&header)?;
+
+    for ws in &cfg.workspaces {
+        let item = CheckMenuItem::new(
+            format!("  {} – {}", ws.id, ws.name),
+            true,
+            ws.id == current,
+            None,
+        );
+        menu_actions.insert(item.id().0.clone(), MenuAction::Activate(ws.id));
+        menu.append(&item)?;
+        ws_check_items.insert(ws.id, item);
+    }
+
+    menu.append(&PredefinedMenuItem::separator())?;
+    let quit = MenuItem::new("Beenden", true, None);
+    menu_actions.insert(quit.id().0.clone(), MenuAction::Quit);
+    menu.append(&quit)?;
+
+    let tray = TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_tooltip("Workspace Manager")
+        .with_icon(default_icon())
+        .build()
+        .context("TrayIconBuilder::build")?;
+
+    Ok((tray, menu_actions, ws_check_items))
+}
+
+/// Erzeugt ein einfaches Tray-Icon (gefülltes Quadrat) programmatisch.
+fn default_icon() -> Icon {
+    const SIZE: u32 = 32;
+    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let border = x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2;
+            if border {
+                rgba.extend_from_slice(&[0x20, 0x20, 0x20, 0xFF]);
+            } else {
+                rgba.extend_from_slice(&[0x2D, 0x7D, 0xD2, 0xFF]);
+            }
+        }
+    }
+    Icon::from_rgba(rgba, SIZE, SIZE).expect("gültiges Icon")
+}
+
+/// Erzeugt ein verstecktes Top-Level-Fenster, das `WM_HOTKEY` und
+/// `WM_DISPLAYCHANGE` empfängt. (Message-only-Fenster erhalten kein
+/// `WM_DISPLAYCHANGE`, daher ein normales, nie angezeigtes Fenster.)
+fn create_message_window() -> Result<HWND> {
+    unsafe {
+        let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
+        let class_name = w!("WorkspaceManagerMsgWindow");
+
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(wndproc),
+            hInstance: hinstance,
+            lpszClassName: class_name,
+            ..Default::default()
+        };
+        let atom = RegisterClassW(&wc);
+        if atom == 0 {
+            anyhow::bail!("RegisterClassW fehlgeschlagen");
+        }
+
+        let hwnd = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            class_name,
+            w!("Workspace Manager"),
+            WS_OVERLAPPED,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            0,
+            0,
+            HWND::default(),
+            HMENU::default(),
+            hinstance,
+            None,
+        )
+        .context("CreateWindowExW")?;
+
+        Ok(hwnd)
+    }
+}
+
+/// Standard-Nachrichtenschleife. Verarbeitet Fensternachrichten und pollt
+/// danach die Menü-Ereignisse des Tray-Icons.
+fn run_message_loop(state_ptr: *mut AppState) {
+    let mut msg = MSG::default();
+    loop {
+        let ret = unsafe { GetMessageW(&mut msg, None, 0, 0) };
+        // 0 = WM_QUIT, -1 = Fehler.
+        if ret.0 <= 0 {
+            break;
+        }
+        unsafe {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        // Menü-Ereignisse des Tray-Icons abholen.
+        while let Ok(event) = MenuEvent::receiver().try_recv() {
+            let state = unsafe { &mut *state_ptr };
+            match state.menu_actions.get(&event.id.0).cloned() {
+                Some(MenuAction::Activate(ws)) => {
+                    state.manager.activate(ws);
+                    state.refresh_tray();
+                }
+                Some(MenuAction::Quit) => {
+                    tracing::info!("Beenden über Tray-Menü angefordert");
+                    return;
+                }
+                None => {}
+            }
+        }
+    }
+}
+
+/// Führt die zu einer Hotkey-ID gehörende Aktion aus und aktualisiert den Tooltip.
+fn dispatch_hotkey(state: &mut AppState, id: i32) {
+    if let Some(action) = state.actions.get(&id).copied() {
+        match action {
+            Action::Activate(ws) => state.manager.activate(ws),
+            Action::MoveWindow(ws) => state.manager.move_foreground(ws),
+        }
+        state.refresh_tray();
+    }
+}
+
+/// Fensterprozedur: behandelt Hotkeys und Monitoränderungen.
+unsafe extern "system" fn wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        // Reguläre RegisterHotKey-Hotkeys und Hook-Fallback teilen sich den Dispatch.
+        WM_HOTKEY | hook::WM_APP_HOOK_HOTKEY => {
+            let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+            if !state_ptr.is_null() {
+                dispatch_hotkey(&mut *state_ptr, wparam.0 as i32);
+            }
+            LRESULT(0)
+        }
+        WM_DISPLAYCHANGE => {
+            let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+            if !state_ptr.is_null() {
+                handle_display_change(&mut *state_ptr);
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+/// Reagiert auf Monitoränderungen: neu enumerieren, Differenz protokollieren,
+/// Zuordnungen bleiben über stabile IDs erhalten, Sichtbarkeit neu anwenden.
+fn handle_display_change(state: &mut AppState) {
+    let new_ids = monitors::current_ids();
+    if new_ids == state.last_monitor_ids {
+        return;
+    }
+
+    let added: Vec<&String> = new_ids
+        .iter()
+        .filter(|id| !state.last_monitor_ids.contains(id))
+        .collect();
+    let removed: Vec<&String> = state
+        .last_monitor_ids
+        .iter()
+        .filter(|id| !new_ids.contains(id))
+        .collect();
+
+    if !added.is_empty() {
+        tracing::info!("Monitor(e) hinzugekommen: {:?}", added);
+    }
+    if !removed.is_empty() {
+        tracing::info!("Monitor(e) entfernt: {:?}", removed);
+    }
+
+    state.manager.refresh_monitors();
+    state.last_monitor_ids = new_ids;
+
+    // Fensterzuordnungen bleiben bestehen; aktiven Workspace sicher anzeigen.
+    state.manager.apply_visibility();
+}
+
+/// Beendet sauber: Hotkeys deregistrieren und alle Fenster wieder sichtbar machen.
+fn cleanup(state: &mut AppState) {
+    if let Some(hook) = state.keyboard_hook.take() {
+        hook::uninstall(hook);
+    }
+    for id in &state.hotkey_ids {
+        hotkeys::unregister(state.hwnd, *id);
+    }
+    state.manager.show_all();
+}

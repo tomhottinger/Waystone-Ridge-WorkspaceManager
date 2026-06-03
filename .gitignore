@@ -1,0 +1,21 @@
+# Rust build artifacts (von `cargo build` erzeugt – nicht ins Repo)
+/target
+
+# Backup-Dateien älterer rustfmt-Versionen
+**/*.rs.bk
+
+# Windows-Debug-Symbole (außerhalb von target/, falls vorhanden)
+*.pdb
+
+# Logfiles, die beim Testen mit `--log` entstehen können
+*.log
+
+# Editor- und Betriebssystem-Dateien
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db
+
+# Hinweis: Cargo.lock wird absichtlich NICHT ignoriert.
+# Für ausführbare Programme (binaries) gehört sie ins Repo, damit Builds
+# reproduzierbar sind.
