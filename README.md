@@ -128,5 +128,4 @@ Enthält u. a. Unit-Tests für das Parsen der Kommandozeilenoptionen (`cli.rs`).
 
 ## Lizenz
 
-Noch keine Lizenz festgelegt. Ohne Lizenz gelten die Standard-Urheberrechte –
-ergänze bei Bedarf z. B. eine `LICENSE`-Datei (MIT/Apache-2.0).
+Siehe LICENSE (MIT Lizenz)
