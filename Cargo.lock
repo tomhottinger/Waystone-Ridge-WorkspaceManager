@@ -3,6 +3,19 @@
 version = 4
 
 [[package]]
+name = "Waystone-Ridge-WorkspaceManager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "tray-icon",
+ "windows",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1440,19 +1453,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "workspace-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "toml",
- "tracing",
- "tracing-subscriber",
- "tray-icon",
- "windows",
 ]
 
 [[package]]

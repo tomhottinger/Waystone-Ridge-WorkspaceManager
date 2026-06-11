@@ -15,6 +15,7 @@ mod hook;
 mod hotkeys;
 mod logging;
 mod monitors;
+mod overlay;
 mod windows;
 mod workspace;
 
@@ -64,22 +65,30 @@ struct AppState {
     keyboard_hook: Option<HHOOK>,
     /// Zuletzt bekannte Monitor-IDs (für Änderungserkennung).
     last_monitor_ids: Vec<String>,
+    /// Optionales Desktop-Overlay (nur wenn show_overlay = true in config.toml).
+    overlay: Option<overlay::Overlay>,
 }
 
 impl AppState {
-    /// Aktualisiert Tray-Tooltip und Häkchen-Markierung auf den aktiven Workspace.
+    /// Aktualisiert Icon, Tooltip, Häkchen und Overlay auf den aktiven Workspace.
     fn refresh_tray(&self) {
         let current = self.manager.current;
-        let text = format!(
-            "Workspace Manager – aktiv: {} ({})",
-            current,
-            self.manager.name_of(current)
-        );
-        let _ = self.tray.set_tooltip(Some(text));
+        let name = self.manager.name_of(current);
+
+        let tooltip = format!("Workspace Manager – aktiv: {} ({})", current, name);
+        let _ = self.tray.set_tooltip(Some(tooltip));
+
+        // Tray-Icon mit aktueller Workspace-Nummer neu zeichnen.
+        let _ = self.tray.set_icon(Some(make_numbered_icon(current)));
 
         // Nur der aktive Workspace erhält ein Häkchen.
         for (id, item) in &self.ws_check_items {
             item.set_checked(*id == current);
+        }
+
+        // Overlay aktualisieren, falls aktiv.
+        if let Some(ref ov) = self.overlay {
+            ov.update(&name);
         }
     }
 }
@@ -141,6 +150,23 @@ fn run() -> Result<()> {
 
     let last_monitor_ids = monitors::current_ids();
 
+    // Desktop-Overlay erzeugen, wenn in der Konfiguration aktiviert.
+    let overlay = if cfg.show_overlay {
+        let name = manager.name_of(manager.current);
+        match overlay::Overlay::create(&cfg.overlay_corner, &name) {
+            Ok(ov) => {
+                tracing::info!("Desktop-Overlay aktiviert");
+                Some(ov)
+            }
+            Err(e) => {
+                tracing::warn!("Overlay konnte nicht erstellt werden: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Zustand boxen und Zeiger im Fenster hinterlegen.
     let state = Box::new(AppState {
         manager,
@@ -152,6 +178,7 @@ fn run() -> Result<()> {
         hwnd,
         keyboard_hook,
         last_monitor_ids,
+        overlay,
     });
     let state_ptr = Box::into_raw(state);
     unsafe {
@@ -298,27 +325,89 @@ fn build_tray(
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("Workspace Manager")
-        .with_icon(default_icon())
+        .with_icon(make_numbered_icon(current))
         .build()
         .context("TrayIconBuilder::build")?;
 
     Ok((tray, menu_actions, ws_check_items))
 }
 
-/// Erzeugt ein einfaches Tray-Icon (gefülltes Quadrat) programmatisch.
-fn default_icon() -> Icon {
+/// 3×5 Pixelfont für die Ziffern 0–9. Bit 2 = linke Spalte, Bit 0 = rechte Spalte.
+static DIGITS: [[u8; 5]; 10] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111], // 0
+    [0b110, 0b010, 0b010, 0b010, 0b111], // 1
+    [0b111, 0b001, 0b111, 0b100, 0b111], // 2
+    [0b111, 0b001, 0b111, 0b001, 0b111], // 3
+    [0b101, 0b101, 0b111, 0b001, 0b001], // 4
+    [0b111, 0b100, 0b111, 0b001, 0b111], // 5
+    [0b100, 0b100, 0b111, 0b101, 0b111], // 6
+    [0b111, 0b001, 0b001, 0b001, 0b001], // 7
+    [0b111, 0b101, 0b111, 0b101, 0b111], // 8
+    [0b111, 0b101, 0b111, 0b001, 0b111], // 9
+];
+
+/// Erzeugt ein 32×32 Tray-Icon mit der Workspace-Nummer als Pixel-Text.
+fn make_numbered_icon(ws_id: u32) -> Icon {
     const SIZE: u32 = 32;
-    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    let text = format!("{}", ws_id);
+    let n = text.len() as u32;
+
+    let scale: u32 = if n == 1 { 5 } else if n == 2 { 4 } else { 2 };
+    let digit_w = 3 * scale;
+    let digit_h = 5 * scale;
+    let gap = scale;
+    let total_w = digit_w * n + gap * n.saturating_sub(1);
+    let start_x = (SIZE - total_w) / 2;
+    let start_y = (SIZE - digit_h) / 2;
+
+    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
+
+    // Hintergrund: blau.
+    for chunk in rgba.chunks_mut(4) {
+        chunk[0] = 0x2D;
+        chunk[1] = 0x7D;
+        chunk[2] = 0xD2;
+        chunk[3] = 0xFF;
+    }
+
+    // Rand: dunkelgrau.
     for y in 0..SIZE {
         for x in 0..SIZE {
-            let border = x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2;
-            if border {
-                rgba.extend_from_slice(&[0x20, 0x20, 0x20, 0xFF]);
-            } else {
-                rgba.extend_from_slice(&[0x2D, 0x7D, 0xD2, 0xFF]);
+            if x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2 {
+                let i = ((y * SIZE + x) * 4) as usize;
+                rgba[i] = 0x20;
+                rgba[i + 1] = 0x20;
+                rgba[i + 2] = 0x20;
+                rgba[i + 3] = 0xFF;
             }
         }
     }
+
+    // Ziffern rendern.
+    for (ci, ch) in text.chars().enumerate() {
+        let d = (ch as u8 - b'0') as usize;
+        let cx = start_x + ci as u32 * (digit_w + gap);
+        for (row, &bits) in DIGITS[d].iter().enumerate() {
+            for col in 0..3u32 {
+                if bits & (1 << (2 - col)) != 0 {
+                    for sy in 0..scale {
+                        for sx in 0..scale {
+                            let px = cx + col * scale + sx;
+                            let py = start_y + row as u32 * scale + sy;
+                            if px < SIZE && py < SIZE {
+                                let i = ((py * SIZE + px) * 4) as usize;
+                                rgba[i] = 0xFF;
+                                rgba[i + 1] = 0xFF;
+                                rgba[i + 2] = 0xFF;
+                                rgba[i + 3] = 0xFF;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Icon::from_rgba(rgba, SIZE, SIZE).expect("gültiges Icon")
 }
 

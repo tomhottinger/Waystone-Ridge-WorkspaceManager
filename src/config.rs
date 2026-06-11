@@ -21,11 +21,28 @@ pub struct WorkspaceConfig {
     pub assigned_monitors: Vec<String>,
 }
 
+/// Ecke des Bildschirms, in der das Overlay angezeigt wird.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+}
+
 /// Gesamte Konfiguration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub workspaces: Vec<WorkspaceConfig>,
+    /// Overlay einschalten (Standard: aus).
+    #[serde(default)]
+    pub show_overlay: bool,
+    /// Ecke des Overlay-Fensters (Standard: bottom_right).
+    #[serde(default)]
+    pub overlay_corner: OverlayCorner,
 }
 
 /// Pfad zur `config.toml` neben der ausführbaren Datei.
@@ -83,6 +100,15 @@ pub const DEFAULT_CONFIG: &str = r#"# Workspace Manager – Konfiguration
 #   activate_hotkey    Hotkey zum Aktivieren (z. B. "Win+1", "Ctrl+Alt+1", "Win+F1")
 #   move_window_hotkey Hotkey, um das aktive Fenster in diesen Workspace zu verschieben
 #   assigned_monitors  optionale Liste stabiler Monitor-IDs (für spätere Versionen)
+#
+# Overlay-Optionen (globale Einstellungen, außerhalb der [[workspaces]]-Blöcke):
+#   show_overlay   = true/false   – permanentes Overlay-Fenster aktivieren (Standard: false)
+#   overlay_corner = "top_left" | "top_right" | "bottom_left" | "bottom_right"
+#                                 – Bildschirmecke für das Overlay (Standard: bottom_right)
+#
+# Beispiel:
+#   show_overlay = true
+#   overlay_corner = "top_right"
 
 [[workspaces]]
 id = 1

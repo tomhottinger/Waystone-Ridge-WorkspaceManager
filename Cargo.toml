@@ -1,11 +1,11 @@
 [package]
-name = "workspace-manager"
+name = "Waystone-Ridge-WorkspaceManager"
 version = "0.1.0"
 edition = "2021"
 description = "Workspace Manager für Windows — verwaltet benannte Workspaces mit Fenster-Sichtbarkeit und Hotkeys"
 
 [[bin]]
-name = "workspace-manager"
+name = "Waystone-Ridge"
 path = "src/main.rs"
 
 [dependencies]

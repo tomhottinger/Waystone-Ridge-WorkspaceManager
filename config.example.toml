@@ -1,0 +1,72 @@
+# =============================================================================
+# Waystone Ridge – Workspace Manager
+# Beispielkonfiguration
+# =============================================================================
+#
+# Diese Datei zeigt alle verfügbaren Optionen mit Erklärungen.
+# Zum Aktivieren: Datei als "config.toml" neben die .exe legen.
+# Mit --config <Pfad> kann auch ein anderer Pfad angegeben werden.
+
+
+# -----------------------------------------------------------------------------
+# Globale Optionen
+# (müssen VOR den [[workspaces]]-Blöcken stehen)
+# -----------------------------------------------------------------------------
+
+# Permanentes Desktop-Overlay ein-/ausschalten.
+# Zeigt den Namen des aktuellen Workspace in einer Bildschirmecke.
+# Ohne diesen Eintrag (oder mit false) startet kein Overlay-Fenster.
+show_overlay = true
+
+# Ecke, in der das Overlay angezeigt wird.
+# Erlaubte Werte: "top_left"  |  "top_right"  |  "bottom_left"  |  "bottom_right"
+# Standard: "bottom_right"
+overlay_corner = "top_right"
+
+
+# -----------------------------------------------------------------------------
+# Workspaces
+# Jeder Workspace wird als eigener [[workspaces]]-Block definiert.
+# -----------------------------------------------------------------------------
+#
+# Felder:
+#   id                 – eindeutige Zahl (Pflichtfeld)
+#   name               – Anzeigename im Overlay und Tray-Menü (Pflichtfeld)
+#   activate_hotkey    – Hotkey zum Wechseln auf diesen Workspace
+#   move_window_hotkey – Hotkey, um das aktive Fenster in diesen Workspace zu verschieben
+#   assigned_monitors  – reserviert für spätere Versionen, kann leer bleiben
+#
+# Hotkey-Format: "Mod+Mod+Taste"
+# Modifier: Win, Ctrl, Alt, Shift  (auch Strg, Umschalt als Alias)
+# Tasten:    0–9, A–Z, F1–F24
+# Beispiele: "Win+1", "Ctrl+Alt+F2", "Win+Shift+3"
+
+[[workspaces]]
+id = 1
+name = "Entwicklung"
+activate_hotkey = "Win+1"
+move_window_hotkey = "Win+Shift+1"
+
+[[workspaces]]
+id = 2
+name = "Browser"
+activate_hotkey = "Win+2"
+move_window_hotkey = "Win+Shift+2"
+
+[[workspaces]]
+id = 3
+name = "Kommunikation"
+activate_hotkey = "Win+3"
+move_window_hotkey = "Win+Shift+3"
+
+[[workspaces]]
+id = 4
+name = "Dokumente"
+activate_hotkey = "Win+4"
+move_window_hotkey = "Win+Shift+4"
+
+[[workspaces]]
+id = 5
+name = "Diverses"
+activate_hotkey = "Win+5"
+move_window_hotkey = "Win+Shift+5"
