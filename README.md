@@ -11,10 +11,15 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
 - Globale Hotkeys: `Win+N` aktivieren, `Win+Shift+N` aktives Fenster verschieben.
 - Beliebige Hotkey-Kombinationen (`Win`, `Ctrl`, `Alt`, `Shift` + Ziffer/Buchstabe/`F1–F24`).
 - Automatische Zuordnung neuer Fenster zum aktiven Workspace.
+- **Dynamisches Tray-Icon**: zeigt die Nummer des aktiven Workspace als Pixel-Text.
+- **Desktop-Overlay**: always-on-top, halbtransparentes Fenster in einer konfigurierbaren
+  Bildschirmecke — zeigt dauerhaft den Namen des aktiven Workspace (opt-in via `config.toml`).
+- **Summon-Hotkeys**: ein beliebiges Fenster per Fenstertitel-Suche auf den aktuellen
+  Workspace holen — auch wenn es gerade versteckt auf einem anderen Workspace liegt.
+  Das Fenster erhält automatisch den Fokus und wird in den Vordergrund gebracht.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
-- Tray-Icon-Menü: Workspace wählen, Beenden; der **aktive Workspace ist mit einem
-  Häkchen markiert**.
+- Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
 - Filtert ungeeignete Fenster (Tool-/Shell-/cloaked UWP-Fenster).
 - Optionale Konsolenausgabe (`--debug`), alternatives Config-File (`--config`) und
   ein auf 1000 Zeilen begrenztes Logfile (`--log`).
@@ -26,105 +31,131 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
 
 ## Bauen
 
-### Nativ unter Windows (empfohlen, MSVC)
-
 ```powershell
 rustup default stable
 cargo build --release
 ```
 
-Das Ergebnis: `target\release\workspace-manager.exe`.
-
-### Cross-Compile von Linux (GNU-Target)
-
-```bash
-rustup target add x86_64-pc-windows-gnu
-# Linker: gcc-mingw-w64-x86-64
-export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
-cargo build --release --target x86_64-pc-windows-gnu
-```
-
-> Hinweis: Diese App nutzt ausschließlich Windows-APIs und läuft nur unter
-> Windows. Auf Linux lässt sie sich kompilieren, aber nicht ausführen/testen.
+Das Ergebnis: `target\release\Waystone-Ridge.exe`.
 
 ## Konfiguration
 
 Beim ersten Start wird `config.toml` **neben der EXE** erzeugt (Workspaces 1–7).
-Beispiel:
+Mit `--config <Pfad>` kann eine andere Datei angegeben werden.
+
+### Workspaces
 
 ```toml
 [[workspaces]]
 id = 1
-name = "Arbeit"
-activate_hotkey = "Win+1"
+name = "Entwicklung"
+activate_hotkey    = "Win+1"
 move_window_hotkey = "Win+Shift+1"
-assigned_monitors = []   # optionale stabile Monitor-IDs (in v1 informativ)
 ```
+
+### Workspace-Anzeige
+
+Das **Tray-Icon** zeigt immer die Nummer des aktiven Workspace als Pixel-Text —
+ohne Hovern oder Öffnen des Menüs.
+
+Das **Desktop-Overlay** ist standardmäßig deaktiviert. Es wird durch zwei globale
+Einträge (außerhalb aller `[[…]]`-Blöcke, am Anfang der Datei) eingeschaltet:
+
+```toml
+show_overlay   = true
+overlay_corner = "top_right"
+```
+
+Erlaubte Werte für `overlay_corner`:
+
+| Oben | Mitte-oben | Oben rechts |
+|---|---|---|
+| `top_left` | `top_center` | `top_right` |
+| `bottom_left` | `bottom_center` | `bottom_right` |
+
+Das Overlay passt sich bei jedem Workspace-Wechsel sofort an und ist
+click-through (Mausklicks gehen durch).
+
+### Summon-Hotkeys
+
+Mit `[[summons]]`-Blöcken lassen sich Hotkeys definieren, die ein bestimmtes
+Fenster **auf den aktuellen Workspace holen** — auch wenn es gerade versteckt
+auf einem anderen Workspace liegt:
+
+```toml
+[[summons]]
+hotkey = "Win+F1"
+title  = "Outlook"
+
+[[summons]]
+hotkey = "Win+F2"
+title  = "Slack"
+```
+
+- `title` ist ein **Teilstring** des Fenstertitels; Groß-/Kleinschreibung wird ignoriert.
+- Das gefundene Fenster wird auf den aktuellen Workspace geholt, in den Vordergrund
+  gebracht und erhält den Fokus. War es minimiert, wird es dabei wiederhergestellt.
+- Wird kein passendes Fenster gefunden, passiert nichts (Meldung im Log bei `--debug`).
+- Beliebig viele Blöcke möglich, auch keiner.
 
 ## Bedienung
 
-- `Win+1` … `Win+7`: entsprechenden Workspace aktivieren.
-- `Win+Shift+1` … `Win+Shift+7`: aktuelles Vordergrundfenster dorthin verschieben.
-  Dabei wird der **Zielworkspace zum aktiven Workspace** – das verschobene Fenster
-  bleibt sichtbar, die Fenster des vorherigen Workspace werden ausgeblendet.
-- Tray-Icon (Rechts-/Linksklick): Workspace wählen oder **Beenden**. Der gerade
-  aktive Workspace trägt im Menü ein Häkchen.
+| Aktion | Standard-Hotkey |
+|--------|----------------|
+| Workspace N aktivieren | `Win+N` |
+| Aktives Fenster zu Workspace N verschieben | `Win+Shift+N` |
+| Fenster per Titel holen (Summon) | konfigurierbar, z. B. `Win+F1` |
+
+- Beim Verschieben eines Fensters wird der **Zielworkspace zum aktiven Workspace**.
+- Tray-Icon (Rechts-/Linksklick): Workspace wählen oder **Beenden**.
 
 ## Kommandozeilenoptionen
 
 | Option            | Wirkung |
 |-------------------|---------|
-| `--debug`         | Konsolenausgabe aktivieren. Ohne diese Option läuft die App **fensterlos** (kein Konsolenfenster). Beim Start aus einer Konsole hängt sie sich an deren Fenster an, sonst öffnet sie ein neues. |
-| `--config <pfad>` | Verwendet die angegebene Konfigurationsdatei statt `config.toml` neben der EXE. Existiert die Datei nicht, wird dort eine Standardkonfiguration angelegt. |
-| `--log <pfad>`    | Schreibt ein Logfile an den angegebenen Pfad. Die Datei behält **nie mehr als die letzten 1000 Zeilen**; ältere Zeilen werden gelöscht. |
+| `--debug`         | Konsolenausgabe aktivieren. Ohne diese Option läuft die App **fensterlos**. |
+| `--config <pfad>` | Verwendet die angegebene Konfigurationsdatei statt `config.toml` neben der EXE. |
+| `--log <pfad>`    | Schreibt ein Logfile; nie mehr als die letzten **1000 Zeilen**. |
 
-Ungültige Argumente und fatale Startfehler werden – mangels Konsole im Normalbetrieb –
-in einer **MessageBox** angezeigt.
+Fatale Startfehler werden in einer **MessageBox** angezeigt.
 
 ### Reservierte Hotkeys (Win+Ziffer)
 
-`Win+1` … `Win+0` (und `Win+Shift+N`) sind von der Windows-Taskleiste reserviert;
-`RegisterHotKey` lehnt sie ab und es gibt **keine** Möglichkeit, diese
-Registrierung regulär zu überschreiben. Die App erkennt das automatisch und
-weicht für solche Kombinationen auf einen **Low-Level-Keyboard-Hook**
-(`WH_KEYBOARD_LL`) aus, der die Tasten vor der Shell abfängt und deren
-Standardverhalten (inkl. Startmenü) unterdrückt. Nicht reservierte Hotkeys
-(z. B. `Ctrl+Alt+1`, `Win+F1`) nutzen weiterhin den robusten
-`RegisterHotKey`-Pfad. Welcher Pfad je Hotkey gewählt wurde, steht im Log.
+`Win+1` … `Win+0` (und `Win+Shift+N`) sind von der Windows-Taskleiste reserviert.
+Die App erkennt das automatisch und weicht auf einen **Low-Level-Keyboard-Hook**
+(`WH_KEYBOARD_LL`) aus. Nicht reservierte Hotkeys nutzen `RegisterHotKey`.
 
 ## Logging
 
-Standardmäßig läuft die App ohne Konsole und ohne Logfile. Mit `--debug` gehen
-die Logs nach `stdout` (Konsole), mit `--log <pfad>` zusätzlich in eine Datei, die
-auf die letzten 1000 Zeilen begrenzt ist. Beides lässt sich kombinieren.
+Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
+(auf 1000 Zeilen begrenzt). Beides kombinierbar.
 
 ## Bekannte Grenzen (v1)
 
-- In-Memory-Zuordnung (keine Persistenz von Fensterzuständen).
-- UWP-/Admin-/Systemfenster können Sonderverhalten zeigen; manche sind nicht
-  steuerbar (Admin-Fenster nur bei erhöhten Rechten).
+- In-Memory-Zuordnung (keine Persistenz von Fensterzuständen nach Neustart).
+- UWP-/Admin-/Systemfenster können Sonderverhalten zeigen.
 - Monitorzuordnungen steuern in v1 die Sichtbarkeit nicht (nur HWND→Workspace).
 
 ## Module
 
-| Datei          | Aufgabe |
-|----------------|---------|
-| `main.rs`      | Start, Message-Loop, Tray-Icon, Hotkey-Dispatch, Cleanup |
-| `cli.rs`       | Kommandozeilen-Argumente parsen (`--debug`, `--config`, `--log`) |
-| `logging.rs`   | Tracing-Init: Konsole (bei `--debug`) und auf 1000 Zeilen begrenztes Logfile |
-| `config.rs`    | `config.toml` laden/erzeugen/validieren |
-| `hotkeys.rs`   | Hotkey-Strings parsen, globale Hotkeys registrieren |
-| `windows.rs`   | Fenster enumerieren/filtern, anzeigen/verstecken |
-| `monitors.rs`  | Monitore enumerieren, stabile IDs, Änderungserkennung |
-| `workspace.rs` | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben |
+| Datei           | Aufgabe |
+|-----------------|---------|
+| `main.rs`       | Start, Message-Loop, Tray-Icon, Hotkey-Dispatch, Cleanup |
+| `cli.rs`        | Kommandozeilen-Argumente parsen |
+| `logging.rs`    | Tracing-Init: Konsole und begrenztes Logfile |
+| `config.rs`     | `config.toml` laden/erzeugen/validieren |
+| `hotkeys.rs`    | Hotkey-Strings parsen, globale Hotkeys registrieren |
+| `hook.rs`       | Low-Level-Keyboard-Hook für reservierte Hotkeys |
+| `windows.rs`    | Fenster enumerieren/filtern, anzeigen/verstecken, Titelsuche |
+| `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
+| `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |
+| `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
 
 ## Tests
 
 ```powershell
 cargo test
 ```
-
-Enthält u. a. Unit-Tests für das Parsen der Kommandozeilenoptionen (`cli.rs`).
 
 ## Lizenz
 

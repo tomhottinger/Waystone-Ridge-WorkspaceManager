@@ -3,10 +3,12 @@
 use core::ffi::c_void;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowLongW,
-    GetWindowTextLengthW, IsWindow, IsWindowVisible, ShowWindow, GA_ROOTOWNER, GWL_EXSTYLE,
-    GWL_STYLE, SW_HIDE, SW_SHOW, WS_CHILD, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    BringWindowToTop, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
+    GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+    IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow, GA_ROOTOWNER, GWL_EXSTYLE,
+    GWL_STYLE, SW_HIDE, SW_RESTORE, SW_SHOW, WS_CHILD, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 /// Stabiler, hashbarer Schlüssel für ein Fensterhandle.
@@ -76,6 +78,14 @@ pub fn is_manageable(hwnd: HWND) -> bool {
         if !IsWindowVisible(hwnd).as_bool() {
             return false;
         }
+    }
+    is_manageable_structure(hwnd)
+}
+
+/// Strukturprüfung ohne Sichtbarkeits-Check — wird auch für Summon verwendet,
+/// damit versteckte Fenster auf anderen Workspaces gefunden werden können.
+fn is_manageable_structure(hwnd: HWND) -> bool {
+    unsafe {
         if GetAncestor(hwnd, GA_ROOTOWNER) != hwnd {
             return false;
         }
@@ -114,6 +124,67 @@ pub fn is_manageable(hwnd: HWND) -> bool {
 
         true
     }
+}
+
+/// Liefert den Fenstertitel (leer wenn nicht vorhanden).
+pub fn window_title(hwnd: HWND) -> String {
+    let mut buf = [0u16; 512];
+    let len = unsafe { GetWindowTextW(hwnd, &mut buf) };
+    if len <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buf[..len as usize])
+}
+
+/// Bringt ein Fenster in den Vordergrund und gibt ihm den Fokus.
+///
+/// Windows blockiert `SetForegroundWindow` normalerweise für Prozesse, die nicht
+/// selbst im Vordergrund sind. Der `AttachThreadInput`-Trick hängt den eigenen
+/// Thread kurz an den Vordergrund-Thread, damit der Aufruf durchgeht.
+pub fn bring_to_foreground(hwnd: HWND) {
+    unsafe {
+        // Minimiertes Fenster zuerst wiederherstellen, sonst nur anzeigen.
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        } else {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+        }
+
+        let our_tid = GetCurrentThreadId();
+        let fg_hwnd = GetForegroundWindow();
+        let fg_tid = GetWindowThreadProcessId(fg_hwnd, None);
+
+        if fg_tid != 0 && fg_tid != our_tid {
+            let _ = AttachThreadInput(our_tid, fg_tid, true);
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+            let _ = AttachThreadInput(our_tid, fg_tid, false);
+        } else {
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+}
+
+/// Sucht das erste Top-Level-Fenster (sichtbar **oder** versteckt), dessen Titel
+/// den Teilstring `substr` enthält (Groß-/Kleinschreibung wird ignoriert).
+pub fn find_by_title_substr(substr: &str) -> Option<HWND> {
+    let mut all: Vec<HWND> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_all_proc),
+            LPARAM(&mut all as *mut Vec<HWND> as isize),
+        );
+    }
+    let lower = substr.to_lowercase();
+    all.into_iter()
+        .find(|&h| is_manageable_structure(h) && window_title(h).to_lowercase().contains(&lower))
+}
+
+unsafe extern "system" fn enum_all_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let list = &mut *(lparam.0 as *mut Vec<HWND>);
+    list.push(hwnd);
+    BOOL(1)
 }
 
 /// Liefert den Klassennamen eines Fensters.

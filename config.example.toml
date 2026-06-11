@@ -18,10 +18,29 @@
 # Ohne diesen Eintrag (oder mit false) startet kein Overlay-Fenster.
 show_overlay = true
 
-# Ecke, in der das Overlay angezeigt wird.
-# Erlaubte Werte: "top_left"  |  "top_right"  |  "bottom_left"  |  "bottom_right"
+# Position, an der das Overlay angezeigt wird.
+# Erlaubte Werte:
+#   "top_left"     "top_center"     "top_right"
+#   "bottom_left"  "bottom_center"  "bottom_right"
 # Standard: "bottom_right"
 overlay_corner = "top_right"
+
+
+# -----------------------------------------------------------------------------
+# Summon-Hotkeys
+# Ein Fenster per Fenstertitel auf den aktuellen Workspace holen.
+# Beliebig viele [[summons]]-Blöcke möglich (oder keiner).
+# Hotkey-Format: wie bei Workspaces ("Win+F1", "Ctrl+Alt+S", …)
+# title: Teilstring des Fenstertitels — Groß-/Kleinschreibung wird ignoriert.
+# -----------------------------------------------------------------------------
+
+[[summons]]
+hotkey = "Win+F1"
+title = "Outlook"
+
+[[summons]]
+hotkey = "Win+F2"
+title = "Slack"
 
 
 # -----------------------------------------------------------------------------

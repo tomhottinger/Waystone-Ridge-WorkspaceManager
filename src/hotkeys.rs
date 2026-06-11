@@ -12,12 +12,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 /// Aktion, die ein Hotkey auslöst.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Workspace mit dieser ID aktivieren.
     Activate(u32),
     /// Vordergrundfenster in den Workspace mit dieser ID verschieben.
     MoveWindow(u32),
+    /// Erstes Fenster, dessen Titel den Teilstring enthält, auf den aktuellen
+    /// Workspace holen (Groß-/Kleinschreibung wird ignoriert).
+    Summon(String),
 }
 
 /// Geparster Hotkey: Modifier-Maske und virtueller Tastencode.

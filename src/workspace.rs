@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use ::windows::Win32::Foundation::HWND;
+
 use crate::config::Config;
 use crate::monitors::{self, MonitorInfo};
 use crate::windows as win;
@@ -155,6 +157,21 @@ impl WorkspaceManager {
             "Fenster nach Workspace {} ({}) verschoben und aktiviert",
             target,
             self.name_of(target)
+        );
+    }
+
+    /// Holt ein beliebiges Fenster auf den aktuellen Workspace: Zuordnung
+    /// anpassen (ggf. neu aufnehmen) und Sichtbarkeit neu anwenden.
+    pub fn pull_to_current(&mut self, hwnd: HWND) {
+        let key = win::hwnd_key(hwnd);
+        self.window_ws.insert(key, self.current);
+        self.apply_visibility();
+        win::bring_to_foreground(hwnd);
+        tracing::info!(
+            "Fenster '{}' auf Workspace {} ({}) geholt",
+            win::window_title(hwnd),
+            self.current,
+            self.name_of(self.current)
         );
     }
 

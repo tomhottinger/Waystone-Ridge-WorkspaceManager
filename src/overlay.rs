@@ -125,10 +125,13 @@ unsafe fn create_window(corner: &OverlayCorner) -> Result<HWND> {
 }
 
 fn corner_pos(corner: &OverlayCorner, work: &RECT) -> (i32, i32) {
+    let center_x = work.left + (work.right - work.left - WIN_W) / 2;
     match corner {
         OverlayCorner::TopLeft => (work.left + MARGIN, work.top + MARGIN),
+        OverlayCorner::TopCenter => (center_x, work.top + MARGIN),
         OverlayCorner::TopRight => (work.right - WIN_W - MARGIN, work.top + MARGIN),
         OverlayCorner::BottomLeft => (work.left + MARGIN, work.bottom - WIN_H - MARGIN),
+        OverlayCorner::BottomCenter => (center_x, work.bottom - WIN_H - MARGIN),
         OverlayCorner::BottomRight => (work.right - WIN_W - MARGIN, work.bottom - WIN_H - MARGIN),
     }
 }

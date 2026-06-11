@@ -8,6 +8,15 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+/// Konfiguration eines Summon-Hotkeys: holt ein Fenster per Titelsuche.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SummonConfig {
+    /// Hotkey, der die Suche auslöst.
+    pub hotkey: String,
+    /// Teilstring, nach dem im Fenstertitel gesucht wird (Groß-/Kleinschreibung egal).
+    pub title: String,
+}
+
 /// Konfiguration eines einzelnen Workspace, wie sie in `config.toml` steht.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceConfig {
@@ -21,13 +30,15 @@ pub struct WorkspaceConfig {
     pub assigned_monitors: Vec<String>,
 }
 
-/// Ecke des Bildschirms, in der das Overlay angezeigt wird.
+/// Position des Overlay-Fensters am Bildschirmrand.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum OverlayCorner {
     TopLeft,
+    TopCenter,
     TopRight,
     BottomLeft,
+    BottomCenter,
     #[default]
     BottomRight,
 }
@@ -37,6 +48,9 @@ pub enum OverlayCorner {
 pub struct Config {
     #[serde(default)]
     pub workspaces: Vec<WorkspaceConfig>,
+    /// Summon-Hotkeys: Fenster per Titelsuche auf den aktuellen Workspace holen.
+    #[serde(default)]
+    pub summons: Vec<SummonConfig>,
     /// Overlay einschalten (Standard: aus).
     #[serde(default)]
     pub show_overlay: bool,
@@ -103,12 +117,14 @@ pub const DEFAULT_CONFIG: &str = r#"# Workspace Manager – Konfiguration
 #
 # Overlay-Optionen (globale Einstellungen, außerhalb der [[workspaces]]-Blöcke):
 #   show_overlay   = true/false   – permanentes Overlay-Fenster aktivieren (Standard: false)
-#   overlay_corner = "top_left" | "top_right" | "bottom_left" | "bottom_right"
-#                                 – Bildschirmecke für das Overlay (Standard: bottom_right)
+#   overlay_corner = "top_left" | "top_center" | "top_right"
+#                 | "bottom_left" | "bottom_center" | "bottom_right"
+#                                 – Position des Overlay (Standard: bottom_right)
 #
-# Beispiel:
-#   show_overlay = true
-#   overlay_corner = "top_right"
+# Summon-Hotkeys – Fenster per Titelsuche holen (beliebig viele Blöcke):
+# [[summons]]
+#   hotkey = "Win+F1"            – Hotkey, der die Suche auslöst
+#   title  = "Outlook"           – Teilstring des Fenstertitels (Groß-/Kleinschreibung egal)
 
 [[workspaces]]
 id = 1

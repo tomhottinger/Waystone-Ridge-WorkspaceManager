@@ -250,6 +250,16 @@ fn register_hotkeys(hwnd: HWND, cfg: &config::Config) -> (HashMap<i32, Action>, 
             );
         }
     }
+    for summon in &cfg.summons {
+        register_one(
+            hwnd,
+            &summon.hotkey,
+            Action::Summon(summon.title.clone()),
+            &mut next_id,
+            &mut actions,
+            &mut ids,
+        );
+    }
     (actions, ids)
 }
 
@@ -485,12 +495,24 @@ fn run_message_loop(state_ptr: *mut AppState) {
 
 /// Führt die zu einer Hotkey-ID gehörende Aktion aus und aktualisiert den Tooltip.
 fn dispatch_hotkey(state: &mut AppState, id: i32) {
-    if let Some(action) = state.actions.get(&id).copied() {
+    if let Some(action) = state.actions.get(&id).cloned() {
         match action {
-            Action::Activate(ws) => state.manager.activate(ws),
-            Action::MoveWindow(ws) => state.manager.move_foreground(ws),
+            Action::Activate(ws) => {
+                state.manager.activate(ws);
+                state.refresh_tray();
+            }
+            Action::MoveWindow(ws) => {
+                state.manager.move_foreground(ws);
+                state.refresh_tray();
+            }
+            Action::Summon(title) => {
+                if let Some(hwnd) = windows::find_by_title_substr(&title) {
+                    state.manager.pull_to_current(hwnd);
+                } else {
+                    tracing::debug!("Summon: kein Fenster mit Titel-Substring '{}' gefunden", title);
+                }
+            }
         }
-        state.refresh_tray();
     }
 }
 
