@@ -25,6 +25,12 @@ show_overlay = true
 # Standard: "bottom_right"
 overlay_corner = "top_right"
 
+# Verhalten beim Verschieben eines Fensters mit move_window_hotkey:
+#   true  – nach dem Verschieben in den Zielworkspace wechseln (Standard)
+#   false – auf dem aktuellen Workspace bleiben; das Fenster verschwindet
+#           sofort aus der Ansicht und ist auf dem Zielworkspace verfügbar
+move_window_follow = true
+
 
 # -----------------------------------------------------------------------------
 # Summon-Hotkeys

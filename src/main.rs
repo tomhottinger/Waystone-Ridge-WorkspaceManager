@@ -312,6 +312,14 @@ fn build_tray(
     let mut menu_actions: HashMap<String, MenuAction> = HashMap::new();
     let mut ws_check_items: HashMap<u32, CheckMenuItem> = HashMap::new();
 
+    let version_item = MenuItem::new(
+        format!("Waystone Ridge v{}", env!("CARGO_PKG_VERSION")),
+        false,
+        None,
+    );
+    menu.append(&version_item)?;
+    menu.append(&PredefinedMenuItem::separator())?;
+
     let header = MenuItem::new("Workspace aktivieren:", false, None);
     menu.append(&header)?;
 

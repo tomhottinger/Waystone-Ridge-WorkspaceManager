@@ -76,6 +76,21 @@ Erlaubte Werte für `overlay_corner`:
 Das Overlay passt sich bei jedem Workspace-Wechsel sofort an und ist
 click-through (Mausklicks gehen durch).
 
+### Verhalten beim Fenster verschieben
+
+Mit `move_window_follow` (globale Option) lässt sich steuern, ob nach dem
+Verschieben eines Fensters automatisch in den Zielworkspace gewechselt wird:
+
+```toml
+move_window_follow = true   # Standard: in den Zielworkspace wechseln
+move_window_follow = false  # auf dem aktuellen Workspace bleiben
+```
+
+| Wert | Verhalten |
+|------|-----------|
+| `true` (Standard) | Das Fenster wird verschoben **und** der Zielworkspace wird aktiv. |
+| `false` | Das Fenster verschwindet aus dem aktuellen Workspace und liegt auf dem Ziel bereit — der aktive Workspace ändert sich nicht. |
+
 ### Summon-Hotkeys
 
 Mit `[[summons]]`-Blöcken lassen sich Hotkeys definieren, die ein bestimmtes
@@ -106,7 +121,7 @@ title  = "Slack"
 | Aktives Fenster zu Workspace N verschieben | `Win+Shift+N` |
 | Fenster per Titel holen (Summon) | konfigurierbar, z. B. `Win+F1` |
 
-- Beim Verschieben eines Fensters wird der **Zielworkspace zum aktiven Workspace**.
+- Beim Verschieben eines Fensters wird standardmäßig der **Zielworkspace zum aktiven Workspace** (konfigurierbar via `move_window_follow`).
 - Tray-Icon (Rechts-/Linksklick): Workspace wählen oder **Beenden**.
 
 ## Kommandozeilenoptionen

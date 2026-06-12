@@ -36,6 +36,8 @@ pub struct WorkspaceManager {
     pub order: Vec<u32>,
     /// Aktuell bekannte Monitore (stabile ID → Info).
     pub monitors: HashMap<String, MonitorInfo>,
+    /// Nach dem Verschieben eines Fensters in den Zielworkspace wechseln.
+    pub move_window_follow: bool,
 }
 
 impl WorkspaceManager {
@@ -62,6 +64,7 @@ impl WorkspaceManager {
             workspaces,
             order,
             monitors: HashMap::new(),
+            move_window_follow: cfg.move_window_follow,
         };
         mgr.refresh_monitors();
         mgr
@@ -149,15 +152,22 @@ impl WorkspaceManager {
         // zuordnen, bevor gewechselt wird (analog zu `activate`).
         self.capture_new_windows();
         self.window_ws.insert(key, target);
-        // Der Ziel-Workspace wird aktiv; das verschobene Fenster bleibt sichtbar,
-        // die Fenster des vorher aktiven Workspace werden versteckt.
-        self.current = target;
-        self.apply_visibility();
-        tracing::info!(
-            "Fenster nach Workspace {} ({}) verschoben und aktiviert",
-            target,
-            self.name_of(target)
-        );
+        if self.move_window_follow {
+            self.current = target;
+            self.apply_visibility();
+            tracing::info!(
+                "Fenster nach Workspace {} ({}) verschoben und Workspace aktiviert",
+                target,
+                self.name_of(target)
+            );
+        } else {
+            self.apply_visibility();
+            tracing::info!(
+                "Fenster nach Workspace {} ({}) verschoben (Workspace nicht gewechselt)",
+                target,
+                self.name_of(target)
+            );
+        }
     }
 
     /// Holt ein beliebiges Fenster auf den aktuellen Workspace: Zuordnung

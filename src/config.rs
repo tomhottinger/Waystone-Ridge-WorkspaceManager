@@ -43,6 +43,10 @@ pub enum OverlayCorner {
     BottomRight,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Gesamte Konfiguration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -57,6 +61,9 @@ pub struct Config {
     /// Ecke des Overlay-Fensters (Standard: bottom_right).
     #[serde(default)]
     pub overlay_corner: OverlayCorner,
+    /// Nach dem Verschieben eines Fensters in den Zielworkspace wechseln (Standard: true).
+    #[serde(default = "default_true")]
+    pub move_window_follow: bool,
 }
 
 /// Pfad zur `config.toml` neben der ausführbaren Datei.
@@ -115,11 +122,14 @@ pub const DEFAULT_CONFIG: &str = r#"# Workspace Manager – Konfiguration
 #   move_window_hotkey Hotkey, um das aktive Fenster in diesen Workspace zu verschieben
 #   assigned_monitors  optionale Liste stabiler Monitor-IDs (für spätere Versionen)
 #
-# Overlay-Optionen (globale Einstellungen, außerhalb der [[workspaces]]-Blöcke):
-#   show_overlay   = true/false   – permanentes Overlay-Fenster aktivieren (Standard: false)
-#   overlay_corner = "top_left" | "top_center" | "top_right"
-#                 | "bottom_left" | "bottom_center" | "bottom_right"
-#                                 – Position des Overlay (Standard: bottom_right)
+# Globale Optionen (außerhalb der [[workspaces]]-Blöcke):
+#   show_overlay        = true/false   – permanentes Overlay-Fenster aktivieren (Standard: false)
+#   overlay_corner      = "top_left" | "top_center" | "top_right"
+#                       | "bottom_left" | "bottom_center" | "bottom_right"
+#                                      – Position des Overlay (Standard: bottom_right)
+#   move_window_follow  = true/false   – nach dem Verschieben in den Zielworkspace wechseln
+#                                        true  = in den Zielworkspace wechseln (Standard)
+#                                        false = auf dem aktuellen Workspace bleiben
 #
 # Summon-Hotkeys – Fenster per Titelsuche holen (beliebig viele Blöcke):
 # [[summons]]
