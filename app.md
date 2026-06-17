@@ -109,6 +109,65 @@ Win+Shift+7
 
 ---
 
+# Summon-Hotkeys
+
+Mit Summon-Hotkeys kann der Benutzer ein bestimmtes Fenster auf den aktuellen Workspace holen, unabhängig davon, auf welchem Workspace es sich gerade befindet.
+
+## Konfiguration
+
+```toml
+[[summons]]
+hotkey     = "Win+F1"
+title      = "Outlook"
+launch     = "outlook.exe"
+launch_dir = "C:\\MyWorkDir"
+```
+
+```text
+hotkey     – Hotkey-Format wie bei Workspaces
+title      – Teilstring des Fenstertitels (Groß-/Kleinschreibung egal)
+launch     – (optional) Kommandozeile, die gestartet wird, wenn kein Fenster gefunden wird
+launch_dir – (optional) Arbeitsverzeichnis für den gestarteten Prozess
+```
+
+## Verhalten
+
+Wenn der Summon-Hotkey gedrückt wird:
+
+```text
+1. Suche nach einem Fenster, dessen Titel den konfigurierten Teilstring enthält.
+```
+
+Fenster gefunden, auf aktuellem Workspace und im Vordergrund (aktives Fenster):
+
+```text
+→ Fenster minimieren (Toggle-Verhalten)
+```
+
+Fenster gefunden, aber nicht auf aktuellem Workspace oder nicht im Vordergrund:
+
+```text
+→ Fenster auf den aktuellen Workspace holen
+→ Fenster in den Vordergrund bringen
+→ Fokus setzen
+```
+
+Fenster nicht gefunden, `launch` definiert:
+
+```text
+→ Kommandozeile starten
+→ optional: Arbeitsverzeichnis aus launch_dir verwenden
+→ %ENVVAR%-Variablen werden von cmd.exe expandiert
+```
+
+Fenster nicht gefunden, kein `launch`:
+
+```text
+→ nichts passiert (Log-Eintrag bei --debug)
+```
+
+---
+
 # Fensterzuordnung
 
 Jedes verwaltete Fenster gehört genau einem Workspace.
@@ -537,4 +596,8 @@ Alle versteckten Fenster wieder anzeigen.
 - Fensterpositionen bleiben erhalten
 - Hintergrundprozess läuft stabil
 - Beim Beenden werden alle Fenster sichtbar
+- Summon holt Fenster auf den aktuellen Workspace
+- Summon minimiert Fenster, wenn es bereits aktiv auf dem aktuellen Workspace ist
+- Summon startet Programm per launch, wenn kein Fenster gefunden wird
+- launch_dir setzt das Arbeitsverzeichnis für den gestarteten Prozess
 ```
