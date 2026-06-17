@@ -515,7 +515,15 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
             }
             Action::Summon(title) => {
                 if let Some(hwnd) = windows::find_by_title_substr(&title) {
-                    state.manager.pull_to_current(hwnd);
+                    let key = windows::hwnd_key(hwnd);
+                    let on_current = state.manager.window_ws.get(&key) == Some(&state.manager.current);
+                    let is_foreground = hwnd == windows::foreground_window();
+                    if on_current && is_foreground {
+                        windows::minimize(hwnd);
+                        tracing::debug!("Summon: Fenster '{}' minimiert (war aktiv auf aktuellem Workspace)", title);
+                    } else {
+                        state.manager.pull_to_current(hwnd);
+                    }
                 } else {
                     tracing::debug!("Summon: kein Fenster mit Titel-Substring '{}' gefunden", title);
                 }

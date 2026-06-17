@@ -1,6 +1,6 @@
 [package]
 name = "Waystone-Ridge-WorkspaceManager"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Workspace Manager für Windows — verwaltet benannte Workspaces mit Fenster-Sichtbarkeit und Hotkeys"
 

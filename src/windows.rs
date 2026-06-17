@@ -8,7 +8,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
     GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
     IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow, GA_ROOTOWNER, GWL_EXSTYLE,
-    GWL_STYLE, SW_HIDE, SW_RESTORE, SW_SHOW, WS_CHILD, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    GWL_STYLE, SW_HIDE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, WS_CHILD, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW,
 };
 
 /// Stabiler, hashbarer Schlüssel für ein Fensterhandle.
@@ -40,6 +41,13 @@ pub fn show(hwnd: HWND) {
 pub fn hide(hwnd: HWND) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_HIDE);
+    }
+}
+
+/// Minimiert ein Fenster in die Taskleiste.
+pub fn minimize(hwnd: HWND) {
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_MINIMIZE);
     }
 }
 
