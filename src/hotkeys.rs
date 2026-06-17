@@ -19,8 +19,9 @@ pub enum Action {
     /// Vordergrundfenster in den Workspace mit dieser ID verschieben.
     MoveWindow(u32),
     /// Erstes Fenster, dessen Titel den Teilstring enthält, auf den aktuellen
-    /// Workspace holen (Groß-/Kleinschreibung wird ignoriert).
-    Summon(String),
+    /// Workspace holen (Groß-/Kleinschreibung wird ignoriert). Wird kein Fenster
+    /// gefunden und `launch` ist gesetzt, wird dieser Befehl gestartet.
+    Summon { title: String, launch: Option<String>, launch_dir: Option<String> },
 }
 
 /// Geparster Hotkey: Modifier-Maske und virtueller Tastencode.

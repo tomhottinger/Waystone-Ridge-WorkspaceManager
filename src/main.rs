@@ -254,7 +254,11 @@ fn register_hotkeys(hwnd: HWND, cfg: &config::Config) -> (HashMap<i32, Action>, 
         register_one(
             hwnd,
             &summon.hotkey,
-            Action::Summon(summon.title.clone()),
+            Action::Summon {
+                title: summon.title.clone(),
+                launch: summon.launch.clone(),
+                launch_dir: summon.launch_dir.clone(),
+            },
             &mut next_id,
             &mut actions,
             &mut ids,
@@ -513,7 +517,7 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
                 state.manager.move_foreground(ws);
                 state.refresh_tray();
             }
-            Action::Summon(title) => {
+            Action::Summon { title, launch, launch_dir } => {
                 if let Some(hwnd) = windows::find_by_title_substr(&title) {
                     let key = windows::hwnd_key(hwnd);
                     let on_current = state.manager.window_ws.get(&key) == Some(&state.manager.current);
@@ -523,6 +527,17 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
                         tracing::debug!("Summon: Fenster '{}' minimiert (war aktiv auf aktuellem Workspace)", title);
                     } else {
                         state.manager.pull_to_current(hwnd);
+                    }
+                } else if let Some(cmd) = launch {
+                    tracing::info!("Summon: kein Fenster '{}' gefunden, starte '{}'", title, cmd);
+                    use std::os::windows::process::CommandExt;
+                    let mut command = std::process::Command::new("cmd");
+                    command.raw_arg(format!("/C {}", cmd));
+                    if let Some(dir) = launch_dir {
+                        command.current_dir(&dir);
+                    }
+                    if let Err(e) = command.spawn() {
+                        tracing::warn!("Summon: Starten von '{}' fehlgeschlagen: {}", cmd, e);
                     }
                 } else {
                     tracing::debug!("Summon: kein Fenster mit Titel-Substring '{}' gefunden", title);

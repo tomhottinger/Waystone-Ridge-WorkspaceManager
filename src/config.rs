@@ -15,6 +15,12 @@ pub struct SummonConfig {
     pub hotkey: String,
     /// Teilstring, nach dem im Fenstertitel gesucht wird (Groß-/Kleinschreibung egal).
     pub title: String,
+    /// Kommandozeile, die gestartet wird, wenn kein passendes Fenster gefunden wird.
+    #[serde(default)]
+    pub launch: Option<String>,
+    /// Arbeitsverzeichnis für den gestarteten Prozess (optional).
+    #[serde(default)]
+    pub launch_dir: Option<String>,
 }
 
 /// Konfiguration eines einzelnen Workspace, wie sie in `config.toml` steht.
@@ -135,6 +141,8 @@ pub const DEFAULT_CONFIG: &str = r#"# Workspace Manager – Konfiguration
 # [[summons]]
 #   hotkey = "Win+F1"            – Hotkey, der die Suche auslöst
 #   title  = "Outlook"           – Teilstring des Fenstertitels (Groß-/Kleinschreibung egal)
+#   launch     = "outlook.exe"   – (optional) Programm starten, wenn kein Fenster gefunden wird
+#   launch_dir = "C:\\MyDir"     – (optional) Arbeitsverzeichnis für den gestarteten Prozess
 
 [[workspaces]]
 id = 1
