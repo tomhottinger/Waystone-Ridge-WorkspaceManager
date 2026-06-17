@@ -36,17 +36,43 @@ move_window_follow = true
 # Summon-Hotkeys
 # Ein Fenster per Fenstertitel auf den aktuellen Workspace holen.
 # Beliebig viele [[summons]]-Blöcke möglich (oder keiner).
-# Hotkey-Format: wie bei Workspaces ("Win+F1", "Ctrl+Alt+S", …)
-# title: Teilstring des Fenstertitels — Groß-/Kleinschreibung wird ignoriert.
+#
+# Felder:
+#   hotkey     – Hotkey-Format wie bei Workspaces ("Win+F1", "Ctrl+Alt+S", …)
+#   title      – Teilstring des Fenstertitels; Groß-/Kleinschreibung egal
+#   launch     – (optional) Kommandozeile, die gestartet wird, wenn kein
+#                passendes Fenster gefunden wird; %ENVVAR%-Variablen werden
+#                von cmd.exe expandiert
+#   launch_dir – (optional) Arbeitsverzeichnis für den gestarteten Prozess
+#
+# Verhalten:
+#   Fenster gefunden, auf aktuellem Workspace und im Vordergrund
+#     → Fenster wird minimiert (Toggle-Funktion)
+#   Fenster gefunden, aber nicht auf aktuellem Workspace oder nicht im Vordergrund
+#     → Fenster wird auf den aktuellen Workspace geholt und in den Vordergrund gebracht
+#   Fenster nicht gefunden, launch definiert
+#     → Programm wird gestartet
+#   Fenster nicht gefunden, kein launch
+#     → nichts passiert (Meldung im Log bei --debug)
 # -----------------------------------------------------------------------------
 
+# Einfacher Summon ohne launch-Fallback:
 [[summons]]
 hotkey = "Win+F1"
-title = "Outlook"
+title  = "Outlook"
 
+# Summon mit launch-Fallback (Programm starten falls kein Fenster gefunden):
 [[summons]]
 hotkey = "Win+F2"
-title = "Slack"
+title  = "Slack"
+launch = "slack.exe"
+
+# Summon mit launch und Arbeitsverzeichnis; Anführungszeichen mit \" escapen:
+[[summons]]
+hotkey     = "Win+F3"
+title      = "Tom's Console"
+launch     = "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe -p \"Tom's Console\""
+launch_dir = "C:\\dev"
 
 
 # -----------------------------------------------------------------------------

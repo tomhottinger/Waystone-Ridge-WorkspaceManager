@@ -17,6 +17,8 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
 - **Summon-Hotkeys**: ein beliebiges Fenster per Fenstertitel-Suche auf den aktuellen
   Workspace holen — auch wenn es gerade versteckt auf einem anderen Workspace liegt.
   Das Fenster erhält automatisch den Fokus und wird in den Vordergrund gebracht.
+  Ist das Fenster bereits aktiv auf dem aktuellen Workspace, wird es stattdessen **minimiert** (Toggle).
+  Wird kein passendes Fenster gefunden, kann optional eine **Kommandozeile** gestartet werden.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
@@ -98,20 +100,46 @@ Fenster **auf den aktuellen Workspace holen** — auch wenn es gerade versteckt
 auf einem anderen Workspace liegt:
 
 ```toml
+# Einfacher Summon:
 [[summons]]
 hotkey = "Win+F1"
 title  = "Outlook"
 
+# Mit launch-Fallback:
 [[summons]]
 hotkey = "Win+F2"
 title  = "Slack"
+launch = "slack.exe"
+
+# Mit launch und Arbeitsverzeichnis:
+[[summons]]
+hotkey     = "Win+F3"
+title      = "Tom's Console"
+launch     = "%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe -p \"Tom's Console\""
+launch_dir = "C:\\dev"
 ```
 
-- `title` ist ein **Teilstring** des Fenstertitels; Groß-/Kleinschreibung wird ignoriert.
-- Das gefundene Fenster wird auf den aktuellen Workspace geholt, in den Vordergrund
-  gebracht und erhält den Fokus. War es minimiert, wird es dabei wiederhergestellt.
-- Wird kein passendes Fenster gefunden, passiert nichts (Meldung im Log bei `--debug`).
-- Beliebig viele Blöcke möglich, auch keiner.
+| Feld | Pflicht | Beschreibung |
+|------|---------|--------------|
+| `hotkey` | ja | Hotkey-Format wie bei Workspaces |
+| `title` | ja | Teilstring des Fenstertitels (Groß-/Kleinschreibung egal) |
+| `launch` | nein | Kommandozeile, die gestartet wird, wenn kein Fenster gefunden wird |
+| `launch_dir` | nein | Arbeitsverzeichnis für den gestarteten Prozess |
+
+**Verhalten:**
+
+| Situation | Aktion |
+|-----------|--------|
+| Fenster auf aktuellem Workspace **und** im Vordergrund | Fenster wird **minimiert** (Toggle) |
+| Fenster existiert, aber auf anderem Workspace oder nicht im Vordergrund | Fenster wird auf den aktuellen Workspace geholt, erhält Fokus |
+| Fenster nicht gefunden, `launch` definiert | Programm wird gestartet |
+| Fenster nicht gefunden, kein `launch` | Nichts (Meldung im Log bei `--debug`) |
+
+**Hinweise zu `launch`:**
+- `%ENVVAR%`-Variablen werden von `cmd.exe` expandiert.
+- In TOML-Basic-Strings (doppelte Anführungszeichen) müssen `\` als `\\` und `"` als `\"` geschrieben werden.
+- Enthält der Befehl keine Anführungszeichen, kann auch eine Literal-String verwendet werden: `launch = 'pfad\programm.exe'`
+- Beliebig viele `[[summons]]`-Blöcke möglich, auch keiner.
 
 ## Bedienung
 
