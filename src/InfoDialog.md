@@ -13,7 +13,7 @@ Weitere Infos gibt es auf der Projektseite auf [GITHUB](https://github.com/tomho
 
 
 ## Lizenz und Disclaimer
-Die Lizenz kann auf [GITHUB](https://github.com/tomhottinger/Waystone-Ridge-WorkspaceManager). Es ist eine MIT Lizenz mit einem Haftungsausschluss. 
+Die Lizenz kann auf [GITHUB](https://raw.githubusercontent.com/tomhottinger/Waystone-Ridge-WorkspaceManager/refs/heads/main/LICENSE). Es ist eine MIT Lizenz mit einem Haftungsausschluss. 
 
 
 

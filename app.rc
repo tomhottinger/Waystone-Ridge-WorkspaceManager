@@ -1,0 +1,3 @@
+// Resource-Datei: bettet das Application-Manifest ein.
+// ID 1, Typ 24 (RT_MANIFEST) = Standard fuer .exe-Dateien.
+1 24 "app.manifest"

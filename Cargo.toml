@@ -13,6 +13,7 @@ windows = { version = "0.58", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Controls",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_Dwm",
   "Win32_System_Threading",
@@ -29,6 +30,9 @@ tracing-subscriber = "0.3"
 anyhow = "1"
 
 tray-icon = "0.14"
+
+[build-dependencies]
+embed-resource = "2"
 
 # Das Programm ist Windows-only.
 [target.'cfg(not(windows))'.dependencies]
