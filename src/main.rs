@@ -13,6 +13,7 @@ mod cli;
 mod config;
 mod hook;
 mod hotkeys;
+mod info_dialog;
 mod logging;
 mod monitors;
 mod overlay;
@@ -42,6 +43,7 @@ use workspace::WorkspaceManager;
 #[derive(Debug, Clone)]
 enum MenuAction {
     Activate(u32),
+    ShowInfo,
     Quit,
 }
 
@@ -318,9 +320,10 @@ fn build_tray(
 
     let version_item = MenuItem::new(
         format!("Waystone Ridge v{}", env!("CARGO_PKG_VERSION")),
-        false,
+        true,
         None,
     );
+    menu_actions.insert(version_item.id().0.clone(), MenuAction::ShowInfo);
     menu.append(&version_item)?;
     menu.append(&PredefinedMenuItem::separator())?;
 
@@ -494,6 +497,9 @@ fn run_message_loop(state_ptr: *mut AppState) {
                 Some(MenuAction::Activate(ws)) => {
                     state.manager.activate(ws);
                     state.refresh_tray();
+                }
+                Some(MenuAction::ShowInfo) => {
+                    info_dialog::show();
                 }
                 Some(MenuAction::Quit) => {
                     tracing::info!("Beenden über Tray-Menü angefordert");
