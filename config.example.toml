@@ -1,10 +1,10 @@
 # =============================================================================
 # Waystone Ridge – Workspace Manager
-# Beispielkonfiguration
+# Konfiguration
 # =============================================================================
 #
-# Diese Datei zeigt alle verfügbaren Optionen mit Erklärungen.
-# Zum Aktivieren: Datei als "config.toml" neben die .exe legen.
+# Diese Datei wird beim ersten Start automatisch neben der EXE erzeugt.
+# Sie zeigt alle verfügbaren Optionen mit Erklärungen und kann frei angepasst werden.
 # Mit --config <Pfad> kann auch ein anderer Pfad angegeben werden.
 
 
@@ -16,7 +16,7 @@
 # Permanentes Desktop-Overlay ein-/ausschalten.
 # Zeigt den Namen des aktuellen Workspace in einer Bildschirmecke.
 # Ohne diesen Eintrag (oder mit false) startet kein Overlay-Fenster.
-show_overlay = true
+show_overlay = false
 
 # Position, an der das Overlay angezeigt wird.
 # Erlaubte Werte:
@@ -37,7 +37,7 @@ move_window_follow = true
 # ESC oder Fokusverlust blendet das Fenster aus und gibt den Fokus zurück.
 # Voraussetzung: WebView2-Runtime (auf Windows 10/11 vorinstalliert via Edge).
 # Ohne diesen Eintrag ist die Funktion deaktiviert.
-# quick_input_hotkey = "Ctrl+Space"
+# quick_input_hotkey = "Ctrl+s"
 #
 # Fenstergröße in Prozent der Bildschirmmaße (erlaubte Werte: 5–95):
 # quick_input_width_pct  = 40   # Standard: 40 % der Bildschirmbreite
@@ -105,7 +105,13 @@ launch_dir = "C:\\dev"
 # Hotkey-Format: "Mod+Mod+Taste"
 # Modifier: Win, Ctrl, Alt, Shift  (auch Strg, Umschalt als Alias)
 # Tasten:    0–9, A–Z, F1–F24
-# Beispiele: "Win+1", "Ctrl+Alt+F2", "Win+Shift+3"
+#            Space, Escape/Esc, Tab, Return/Enter, Backspace
+#            Delete/Del/Entf, Insert/Ins/Einfg, Home/Pos1, End/Ende
+#            PageUp/PgUp/Bildauf, PageDown/PgDn/Bildab
+#            Left/Links, Right/Rechts, Up/Oben, Down/Unten
+# Beispiele: "Win+1", "Ctrl+Alt+F2", "Win+Shift+3", "Ctrl+Space", "Alt+Left"
+# Hinweis:   Win+Space ist von Windows für die Sprachauswahl reserviert und
+#            kann nicht zuverlässig als Hotkey verwendet werden.
 
 [[workspaces]]
 id = 1
@@ -136,3 +142,24 @@ id = 5
 name = "Diverses"
 activate_hotkey = "Win+5"
 move_window_hotkey = "Win+Shift+5"
+
+[[workspaces]]
+id = 6
+name = "Diverses"
+activate_hotkey = "Win+6"
+move_window_hotkey = "Win+Shift+6"
+
+
+[[workspaces]]
+id = 7
+name = "Diverses"
+activate_hotkey = "Win+7"
+move_window_hotkey = "Win+Shift+7"
+
+
+[[workspaces]]
+id = 8
+name = "Diverses"
+activate_hotkey = "Win+8"
+move_window_hotkey = "Win+Shift+8"
+

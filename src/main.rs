@@ -72,6 +72,8 @@ struct AppState {
     overlay: Option<overlay::Overlay>,
     /// Optionales randloses Schnelleingabe-Fenster.
     quick_input: Option<quick_input::QuickInput>,
+    /// Info-Dialog (WebView2, immer erstellt).
+    info_dialog: Option<info_dialog::InfoDialog>,
 }
 
 impl AppState {
@@ -188,6 +190,18 @@ fn run() -> Result<()> {
         None
     };
 
+    // Info-Dialog erstellen (immer, unabhängig von Config).
+    let info_dialog = match info_dialog::InfoDialog::create() {
+        Ok(d) => {
+            tracing::info!("Info-Dialog erstellt");
+            Some(d)
+        }
+        Err(e) => {
+            tracing::warn!("Info-Dialog konnte nicht erstellt werden: {}", e);
+            None
+        }
+    };
+
     // Zustand boxen und Zeiger im Fenster hinterlegen.
     let state = Box::new(AppState {
         manager,
@@ -201,6 +215,7 @@ fn run() -> Result<()> {
         last_monitor_ids,
         overlay,
         quick_input,
+        info_dialog,
     });
     let state_ptr = Box::into_raw(state);
     unsafe {
@@ -522,7 +537,9 @@ fn run_message_loop(state_ptr: *mut AppState) {
                     state.refresh_tray();
                 }
                 Some(MenuAction::ShowInfo) => {
-                    info_dialog::show();
+                    if let Some(ref d) = state.info_dialog {
+                        d.show();
+                    }
                 }
                 Some(MenuAction::Quit) => {
                     tracing::info!("Beenden über Tray-Menü angefordert");

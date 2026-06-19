@@ -46,8 +46,10 @@ Das Ergebnis: `target\release\Waystone-Ridge.exe`.
 
 ## Konfiguration
 
-Beim ersten Start wird `config.toml` **neben der EXE** erzeugt (Workspaces 1–7).
-Mit `--config <Pfad>` kann eine andere Datei angegeben werden.
+Beim ersten Start wird `config.toml` **neben der EXE** erzeugt — mit dem vollständig
+kommentierten Inhalt der `config.example.toml` (zur Compile-Zeit eingebettet).
+Die Datei kann direkt angepasst werden; kein separater Download nötig.
+Mit `--config <Pfad>` kann auch eine andere Datei angegeben werden.
 
 ### Workspaces
 
@@ -147,10 +149,12 @@ launch_dir = "C:\\dev"
 
 ### Markdown-Schnellnotiz
 
-Ein randloses, immer-oben Fenster mit **Markdown WYSIWYG-Editor** (WebView2).
-Links: Markdown-Eingabe. Rechts: Live-Vorschau. Der Inhalt **bleibt zwischen den Sitzungen erhalten**.
+Ein randloses, immer-oben Fenster mit **Typora-ähnlichem Block-Editor** (WebView2).
+Blöcke werden gerendert dargestellt; der aktive Block zeigt seinen Markdown-Quelltext.
+Beim Öffnen erhält der Editor den Fokus direkt am Ende des letzten Blocks.
 
 Das Fenster erscheint **zentriert** auf dem Bildschirm.
+WebView2-Daten liegen in `%LOCALAPPDATA%\Waystone-Ridge\WebView2` (nicht neben der EXE).
 
 ```toml
 quick_input_hotkey     = "Ctrl+Space"  # beliebige Hotkey-Kombination
@@ -188,6 +192,13 @@ quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = 14 px Stan
 | `Alt+↓` | Nächsten Block aktivieren (oder neuen am Ende) |
 | `Alt+↑` | Vorherigen Block aktivieren |
 
+**Export (`…`-Button in der Toolbar):**
+
+| Eintrag | Aktion |
+|---------|--------|
+| Markdown kopieren | Rohtext in die Zwischenablage |
+| Speichern als … | Nativer Speichern-Dialog, Standard-Filter `*.md` |
+
 **Unterstützte Markdown-Elemente:** Überschriften (H1–H6), Fett/Kursiv/Durchgestrichen,
 Inline-Code und Code-Blöcke (mit Sprachkennung), Blockquotes, Listen (geordnet/ungeordnet),
 Tabellen, horizontale Linien, Links.
@@ -216,10 +227,52 @@ Voraussetzung: Microsoft Edge / WebView2-Runtime (auf Windows 10/11 vorinstallie
 
 Fatale Startfehler werden in einer **MessageBox** angezeigt.
 
-### Reservierte Hotkeys (Win+Ziffer)
+### Hotkey-Referenz
 
-`Win+1` … `Win+0` (und `Win+Shift+N`) sind von der Windows-Taskleiste reserviert.
-Die App erkennt das automatisch und weicht auf einen **Low-Level-Keyboard-Hook**
+#### Modifier (beliebig kombinierbar)
+
+| Bezeichnung in config.toml | Bedeutung |
+|----------------------------|-----------|
+| `Win` | Windows-Taste (auch: `Super`, `Meta`, `Windows`) |
+| `Ctrl` | Steuerungstaste (auch: `Control`, `Strg`) |
+| `Alt` | Alt-Taste |
+| `Shift` | Umschalttaste (auch: `Umschalt`) |
+
+#### Tasten
+
+| Kategorie | Schlüsselwörter |
+|-----------|----------------|
+| Buchstaben | `A` – `Z` (Groß-/Kleinschreibung egal) |
+| Ziffern | `0` – `9` |
+| Funktionstasten | `F1` – `F24` |
+| Leertaste | `Space`, `Leertaste` |
+| Escape | `Escape`, `Esc` |
+| Tabulator | `Tab` |
+| Enter | `Return`, `Enter` |
+| Rücktaste | `Backspace`, `BS` |
+| Entfernen | `Delete`, `Del`, `Entf` |
+| Einfügen | `Insert`, `Ins`, `Einfg` |
+| Pos1 | `Home`, `Pos1` |
+| Ende | `End`, `Ende` |
+| Bild auf | `PageUp`, `PgUp`, `Bildauf` |
+| Bild ab | `PageDown`, `PgDown`, `PgDn`, `Bildab` |
+| Pfeiltasten | `Left`, `Right`, `Up`, `Down` (auch: `Links`, `Rechts`, `Oben`, `Unten`) |
+
+Beispiele: `Ctrl+Space`, `Win+F1`, `Ctrl+Alt+Delete`, `Alt+Left`
+
+#### Von Windows reservierte Kombinationen
+
+Einige Kombinationen sind systemweit belegt und können nicht überschrieben werden:
+
+| Kombination | Windows-Funktion |
+|-------------|-----------------|
+| `Win+Space` | Eingabesprache wechseln (von Windows auf Kernel-Ebene abgefangen) |
+| `Win+L` | Bildschirm sperren |
+| `Win+D` | Desktop anzeigen |
+| `Win+Tab` | Task View |
+
+`Win+1` … `Win+0` und `Win+Shift+N` sind von der Windows-Taskleiste reserviert;
+die App erkennt das automatisch und weicht auf einen **Low-Level-Keyboard-Hook**
 (`WH_KEYBOARD_LL`) aus. Nicht reservierte Hotkeys nutzen `RegisterHotKey`.
 
 ## Logging
@@ -249,6 +302,9 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
 | `quick_input.rs` | Markdown-Schnellnotiz: WYSIWYG-Block-Editor via WebView2 |
 | `quick_input.html` | HTML/JS für Editor (Markdown-Parser, Toolbar, Block-Editing) |
+| `info_dialog.rs` | Info-/Hilfe-Dialog via WebView2 |
+| `info_dialog.html` | HTML/JS für Info-Dialog (Markdown-Renderer, Titelzeile) |
+| `InfoDialog.md` | Hilfetext (Markdown, wird zur Compile-Zeit eingebettet) |
 
 ## Tests
 

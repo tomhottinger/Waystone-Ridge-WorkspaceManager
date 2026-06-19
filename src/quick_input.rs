@@ -1,5 +1,5 @@
 //! Randloses, immer-oben Markdown-Memo, das per Hotkey ein-/ausgeblendet wird.
-//! Editor links (Textarea), Live-Vorschau rechts. Implementiert mit WebView2 (wry).
+//! Typora-ähnlicher Block-Editor via WebView2 (wry). Daten in %LOCALAPPDATA%\Waystone-Ridge\WebView2.
 
 use std::num::NonZeroIsize;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -8,6 +8,9 @@ use anyhow::Result;
 use windows::core::w;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::Dialogs::{
+    GetSaveFileNameW, OPENFILENAMEW, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetForegroundWindow, GetSystemMetrics,
@@ -157,13 +160,45 @@ unsafe fn create_window(
             size: PhysicalSize::<u32>::new(win_w as u32, win_h as u32).into(),
         })
         .with_ipc_handler(move |request: Request<String>| {
-            if request.body() == "close" {
+            let body = request.body();
+            if body == "close" {
                 unsafe { hide_with_restore(HWND(hwnd_val as *mut _)); }
+            } else if let Some(content) = body.strip_prefix("save\n") {
+                save_as_dialog(HWND(hwnd_val as *mut _), content);
             }
         })
         .build_as_child(&HwndHandle(hwnd))?;
 
     Ok((hwnd, webview))
+}
+
+// ── Speichern-Dialog ─────────────────────────────────────────────────────────
+
+fn save_as_dialog(parent: HWND, content: &str) {
+    // Null-terminierter Filter für den Dialog (doppelt-null-terminierte Liste).
+    let filter: Vec<u16> = "Markdown (*.md)\0*.md\0Alle Dateien\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+    let defext: Vec<u16> = "md\0".encode_utf16().collect();
+    let mut path_buf = vec![0u16; 32768];
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: parent,
+        lpstrFilter: windows::core::PCWSTR(filter.as_ptr()),
+        lpstrFile: windows::core::PWSTR(path_buf.as_mut_ptr()),
+        nMaxFile: path_buf.len() as u32,
+        lpstrDefExt: windows::core::PCWSTR(defext.as_ptr()),
+        Flags: OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
+        ..Default::default()
+    };
+
+    let ok = unsafe { GetSaveFileNameW(&mut ofn) };
+    if ok.as_bool() {
+        let end = path_buf.iter().position(|&c| c == 0).unwrap_or(path_buf.len());
+        let path = String::from_utf16_lossy(&path_buf[..end]);
+        let _ = std::fs::write(&path, content.as_bytes());
+    }
 }
 
 // ── Fensterprozedur ──────────────────────────────────────────────────────────

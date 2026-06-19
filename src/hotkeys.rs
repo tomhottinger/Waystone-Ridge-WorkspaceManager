@@ -71,7 +71,28 @@ pub fn parse(spec: &str) -> Result<ParsedHotkey> {
 
 /// Übersetzt einen Tastennamen in einen virtuellen Tastencode (VK).
 fn parse_key(key: &str) -> Result<u32> {
+    let lo = key.to_ascii_lowercase();
     let up = key.to_ascii_uppercase();
+
+    // Benannte Sondertasten.
+    match lo.as_str() {
+        "space" | "leertaste"              => return Ok(0x20), // VK_SPACE
+        "escape" | "esc"                   => return Ok(0x1B), // VK_ESCAPE
+        "tab"                              => return Ok(0x09), // VK_TAB
+        "return" | "enter"                 => return Ok(0x0D), // VK_RETURN
+        "backspace" | "bs"                 => return Ok(0x08), // VK_BACK
+        "delete" | "del" | "entf"          => return Ok(0x2E), // VK_DELETE
+        "insert" | "ins" | "einfg"         => return Ok(0x2D), // VK_INSERT
+        "home" | "pos1"                    => return Ok(0x24), // VK_HOME
+        "end" | "ende"                     => return Ok(0x23), // VK_END
+        "pageup"   | "pgup"   | "bildauf"  => return Ok(0x21), // VK_PRIOR
+        "pagedown" | "pgdown" | "pgdn" | "bildab" => return Ok(0x22), // VK_NEXT
+        "left"  | "links"                  => return Ok(0x25), // VK_LEFT
+        "right" | "rechts"                 => return Ok(0x27), // VK_RIGHT
+        "up"    | "oben"                   => return Ok(0x26), // VK_UP
+        "down"  | "unten"                  => return Ok(0x28), // VK_DOWN
+        _ => {}
+    }
 
     // Einzelne Ziffer oder einzelner Buchstabe: VK == ASCII-Code.
     if up.chars().count() == 1 {

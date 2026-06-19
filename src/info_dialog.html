@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  display: flex; flex-direction: column;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px; color: #111; background: #fff;
+}
+
+/* Identische Titelzeile wie quick_input */
+#titlebar {
+  display: flex; justify-content: space-between; align-items: center;
+  height: 32px; padding: 0 14px; flex-shrink: 0;
+  background: #f3f3f3; border-bottom: 1px solid #e0e0e0;
+  user-select: none;
+}
+#titlebar .title-group { display: flex; align-items: center; }
+#titlebar .logo { width: 18px; height: 18px; margin-right: 9px; stroke: #0078d4; display: block; }
+#titlebar .title { font-size: 12px; font-weight: 400; color: #555; }
+#titlebar .title strong { font-weight: 600; color: #000; }
+#titlebar .credits { font-size: 10px; color: #777; letter-spacing: 0.3px; }
+
+/* Inhalt */
+#content { flex: 1; overflow-y: auto; padding: 20px 28px 12px; }
+
+/* Schliessen-Zeile */
+#footer {
+  display: flex; justify-content: flex-end;
+  padding: 10px 20px 14px; border-top: 1px solid #eee; flex-shrink: 0;
+}
+#close-btn {
+  padding: 5px 22px; border: 1px solid #bbb; border-radius: 3px;
+  background: #fff; cursor: pointer; font-size: 13px; font-family: inherit;
+}
+#close-btn:hover { background: #e8e8e8; }
+
+/* Markdown-Stile */
+#content h1 { font-size:1.5em; font-weight:700; margin:.3em 0 .5em; padding-bottom:.25em; border-bottom:1px solid #e4e4e4; }
+#content h2 { font-size:1.15em; font-weight:600; margin:1.2em 0 .35em; }
+#content h3 { font-size:1.05em; font-weight:600; margin:.8em 0 .25em; }
+#content p  { margin:.4em 0; line-height:1.7; }
+#content ul, #content ol { margin:.3em 0 .3em 1.5em; }
+#content li { line-height:1.65; }
+#content a  { color:#0066cc; text-decoration:none; }
+#content a:hover { text-decoration:underline; }
+#content code { background:#f0f0f0; padding:1px 5px; border-radius:3px; font-size:.88em; font-family:'Cascadia Code','Consolas',monospace; }
+#content pre  { background:#f4f4f4; border-radius:5px; padding:10px 13px; overflow-x:auto; border:1px solid #e4e4e4; }
+#content pre code { background:none; padding:0; }
+#content strong { font-weight:700; }
+#content em     { font-style:italic; }
+#content hr     { border:none; border-top:1px solid #ddd; margin:.6em 0; }
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <div class="title-group">
+    <svg class="logo" viewBox="0 0 24 24" fill="none" stroke-width="2">
+      <path d="M3 20l5-9 4 6 5-12 4 15" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="title">Waystone <strong>Ridge</strong></span>
+  </div>
+  <span class="credits">by Thomas Hottinger &ndash; artScape cybernetics</span>
+</div>
+
+<div id="content"></div>
+
+<div id="footer">
+  <button id="close-btn" onclick="window.ipc.postMessage('close')">Schliessen</button>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+// ── Markdown-Parser ───────────────────────────────────────────────────────────
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function inlineMd(raw) {
+  var codes = [];
+  var s = raw.replace(/`([^`]+)`/g, function(_,c){ codes.push(esc(c)); return '\x00'+(codes.length-1)+'\x00'; });
+  s = esc(s);
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+  s = s.replace(/___(.+?)___/g,       '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g,         '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
+  s = s.replace(/_([^\s].*?[^\s])_/g, '<em>$1</em>');
+  s = s.replace(/~~(.+?)~~/g,         '<del>$1</del>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
+  s = s.replace(/\x00(\d+)\x00/g, function(_,i){ return '<code>'+codes[+i]+'</code>'; });
+  return s;
+}
+function parseMd(src) {
+  var lines=src.split('\n'), out=[], i=0;
+  var inFence=false, fLang='', fLines=[];
+  var inUl=false, inOl=false, inP=false;
+  var tRows=[], tBody=false;
+  function fP()  { if(inP)  { out.push('</p>');  inP=false; } }
+  function fUl() { if(inUl) { out.push('</ul>'); inUl=false; } }
+  function fOl() { if(inOl) { out.push('</ol>'); inOl=false; } }
+  function fT()  {
+    if(!tRows.length) return;
+    out.push('<table>');
+    tRows.forEach(function(r){ out.push(r); });
+    if(tBody){ out.push('</tbody>'); tBody=false; }
+    out.push('</table>'); tRows=[];
+  }
+  function fB() { fP(); fUl(); fOl(); fT(); }
+  while(i < lines.length) {
+    var line = lines[i++];
+    if(/^```/.test(line)){
+      if(inFence){ out.push('<pre><code'+(fLang?' class="language-'+esc(fLang)+'"':'')+'>'+esc(fLines.join('\n'))+'</code></pre>'); inFence=false; fLines=[]; fLang=''; }
+      else{ fB(); inFence=true; fLang=line.slice(3).trim(); }
+      continue;
+    }
+    if(inFence){ fLines.push(line); continue; }
+    if(!line.trim()){ fB(); continue; }
+    var hm=line.match(/^(#{1,6})\s+(.*)/);
+    if(hm){ fB(); out.push('<h'+hm[1].length+'>'+inlineMd(hm[2])+'</h'+hm[1].length+'>'); continue; }
+    if(/^([-*_])\1\1+\s*$/.test(line.trim())){ fB(); out.push('<hr>'); continue; }
+    if(/^>\s?/.test(line)){ fB(); out.push('<blockquote>'+inlineMd(line.replace(/^>\s?/,''))+'</blockquote>'); continue; }
+    if(/^\|/.test(line)){
+      if(/^\|[-| :]+\|$/.test(line.trim())){
+        if(tRows.length===1){ tRows[0]=tRows[0].replace(/<td>/g,'<th>').replace(/<\/td>/g,'</th>').replace('<tr>','<thead><tr>').replace('</tr>','</tr></thead><tbody>'); tBody=true; }
+        continue;
+      }
+      fP(); fUl(); fOl();
+      tRows.push('<tr>'+line.split('|').slice(1,-1).map(function(c){ return '<td>'+inlineMd(c.trim())+'</td>'; }).join('')+'</tr>');
+      continue;
+    }
+    if(tRows.length) fT();
+    var ulm=line.match(/^[-*+]\s+(.*)/);
+    if(ulm){ fP(); if(!inUl){fOl();out.push('<ul>');inUl=true;} out.push('<li>'+inlineMd(ulm[1])+'</li>'); continue; }
+    var olm=line.match(/^\d+\.\s+(.*)/);
+    if(olm){ fP(); if(!inOl){fUl();out.push('<ol>');inOl=true;} out.push('<li>'+inlineMd(olm[1])+'</li>'); continue; }
+    fUl(); fOl();
+    if(!inP){ out.push('<p>'); inP=true; } else { out.push('<br>'); }
+    out.push(inlineMd(line));
+  }
+  fB();
+  if(inFence && fLines.length) out.push('<pre><code>'+esc(fLines.join('\n'))+'</code></pre>');
+  return out.join('');
+}
+
+// ── Inhalt rendern ────────────────────────────────────────────────────────────
+
+var mdContent = `{MD_CONTENT}`;
+document.getElementById('content').innerHTML = parseMd(mdContent);
+
+// ── Tastatur ──────────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', function(e) {
+  if(e.key === 'Escape' || (e.ctrlKey && (e.key === 'w' || e.key === 'W'))) {
+    e.preventDefault();
+    window.ipc.postMessage('close');
+  }
+  if(e.key === 'F5' || (e.ctrlKey && e.key === 'r')) e.preventDefault();
+});
+
+// ── Links im Browser öffnen ───────────────────────────────────────────────────
+
+document.addEventListener('click', function(e) {
+  var a = e.target.closest('a');
+  if(a && a.href) {
+    e.preventDefault();
+    window.ipc.postMessage('url:' + a.href);
+  }
+});
+
+})();
+</script>
+</body>
+</html>
