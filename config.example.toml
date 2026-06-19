@@ -31,10 +31,10 @@ overlay_corner = "top_right"
 #           sofort aus der Ansicht und ist auf dem Zielworkspace verfügbar
 move_window_follow = true
 
-# Markdown-Schnellnotiz: randloses, immer-oben Fenster mit WebView2-Editor.
-# Split-Pane: links Markdown-Eingabe, rechts Live-Vorschau. Der Text bleibt
-# zwischen den Sitzungen erhalten. ESC oder Fokusverlust blendet es aus und
-# gibt den Fokus zurück. Das Fenster erscheint zentriert auf dem Bildschirm.
+# Markdown-Schnellnotiz: randloses, immer-oben Fenster mit WebView2-Block-Editor.
+# Typora-ähnlich: Blöcke werden gerendert; der aktive Block zeigt Markdown-Quelltext.
+# Ctrl+Enter legt einen neuen Block an, Alt+↓/↑ navigiert zwischen Blöcken.
+# ESC oder Fokusverlust blendet das Fenster aus und gibt den Fokus zurück.
 # Voraussetzung: WebView2-Runtime (auf Windows 10/11 vorinstalliert via Edge).
 # Ohne diesen Eintrag ist die Funktion deaktiviert.
 # quick_input_hotkey = "Ctrl+Space"

@@ -1,0 +1,158 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Waystone Ridge Preview</title>
+  <style>
+    /* Globaler Reset für die Vorschau */
+    body {
+      margin: 0;
+      padding: 20px;
+      background-color: #e0e0e0; /* Neutraler Hintergrund für die Vorschau */
+      font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif;
+    }
+
+    .preview-container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    h3 {
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    /* --- AB HIER: DER CODE FÜR DEINE TITELZEILE --- */
+
+    /* Gemeinsame Basis für die Titelzeile */
+    .titlebar-fluent {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 36px;
+      padding: 0 14px;
+      user-select: none;
+      -webkit-app-region: drag;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* LINKS: Logo + Text */
+    .title-group {
+      display: flex;
+      align-items: center;
+    }
+
+    /* Das Berg-Logo */
+    .titlebar-fluent .logo {
+      width: 20px;
+      height: 20px;
+      margin-right: 10px;
+      display: block;
+    }
+
+    /* Der Text "Waystone Ridge" */
+    .titlebar-fluent .title {
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .titlebar-fluent .title span {
+      font-weight: 600;
+    }
+
+    /* RECHTS: Die Credits */
+    .titlebar-fluent .credits {
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.3px;
+      opacity: 0.7;
+      -webkit-app-region: no-drag; /* Macht den Bereich anklickbar, falls ziehbar aktiviert ist */
+    }
+
+    /* Neutralisiert den Standard-Link-Look komplett */
+    .titlebar-fluent .credits a {
+      color: inherit;         /* Übernimmt die Farbe vom Elternelement (.credits) */
+      text-decoration: none;  /* Entfernt die Unterstreichung */
+      cursor: pointer;        /* Zeigt den typischen Klick-Finger */
+    }
+
+    /* Optionaler Effekt: Text wird minimal deutlicher, wenn man mit der Maus drüberfährt */
+    .titlebar-fluent .credits a:hover {
+      opacity: 1;
+    }
+
+    /* --- HELLER MODUS (FORCIERT) --- */
+    .light-mode {
+      background: #f3f3f3;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .light-mode .logo {
+      stroke: #0078d4; /* Windows-Blau für die Berge */
+    }
+    .light-mode .title {
+      color: #555555;
+    }
+    .light-mode .title span {
+      color: #000000;
+    }
+    .light-mode .credits {
+      color: #777777;
+    }
+
+    /* --- DUNKLER MODUS (FORCIERT) --- */
+    .dark-mode {
+      background: #202020;
+      border-bottom: 1px solid #333333;
+    }
+    .dark-mode .logo {
+      stroke: #60cdff; /* Helles Blau/Cyan im Dark Mode */
+    }
+    .dark-mode .title {
+      color: #cccccc;
+    }
+    .dark-mode .title span {
+      color: #ffffff;
+    }
+    .dark-mode .credits {
+      color: #888888;
+    }
+  </style>
+</head>
+<body>
+
+<div class="preview-container">
+
+  <h3>Vorschau: Heller Modus (Windows 11 Light)</h3>
+  <div class="titlebar-fluent light-mode">
+    <div class="title-group">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" stroke-width="2">
+        <path d="M3 20l5-9 4 6 5-12 4 15" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="title">Waystone <span>Ridge</span></span>
+    </div>
+    <!-- Credits mit maskiertem Link -->
+    <span class="credits">
+      by Thomas Hottinger &ndash; <a href="https://www.artscape.ch/WaystoneTools/" target="_blank">artScape</a> cybernetics
+    </span>
+  </div>
+
+  <h3>Vorschau: Dunkler Modus (Windows 11 Dark)</h3>
+  <div class="titlebar-fluent dark-mode">
+    <div class="title-group">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" stroke-width="2">
+        <path d="M3 20l5-9 4 6 5-12 4 15" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="title">Waystone <span>Ridge</span></span>
+    </div>
+    <!-- Credits mit maskiertem Link -->
+    <span class="credits">
+      by Thomas Hottinger &ndash; <a href="https://www.artscape.ch/WaystoneTools/" target="_blank">artScape</a> cybernetics
+    </span>
+  </div>
+
+</div>
+
+</body>
+</html>

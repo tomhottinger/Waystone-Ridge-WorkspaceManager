@@ -26,23 +26,9 @@ body {
 
 #doc { flex: 1; overflow-y: auto; padding: 14px 22px; cursor: text; }
 
-/* Block im Render-Zustand */
-.block {
-  border-radius: 3px; padding: 2px 5px; margin-bottom: 5px; min-height: 1.5em;
-}
+.block { border-radius: 3px; padding: 2px 5px; margin-bottom: 5px; min-height: 1.5em; }
 .block:not(.editing):hover { background: rgba(0,0,0,.04); }
-
-/* Block im Editier-Zustand */
-.block.editing textarea {
-  width: 100%; border: 1px solid #b8d4ff; border-radius: 3px; outline: none;
-  background: #fafcff; padding: 5px 7px;
-  font-family: 'Cascadia Code','Consolas','Courier New',monospace;
-  font-size: {FONT_SIZE}px; color: #1a1a1a; line-height: 1.6;
-  resize: none; display: block; overflow: hidden; min-height: 1.8em;
-}
-
-/* Neue-Block-Zone am Ende */
-#new-zone { min-height: 64px; padding: 2px 5px; }
+.block.editing textarea,
 #new-zone.editing textarea {
   width: 100%; border: 1px solid #b8d4ff; border-radius: 3px; outline: none;
   background: #fafcff; padding: 5px 7px;
@@ -51,9 +37,9 @@ body {
   resize: none; display: block; overflow: hidden; min-height: 1.8em;
 }
 
+#new-zone { min-height: 64px; padding: 2px 5px; }
 #placeholder { color: #bbb; font-style: italic; padding: 2px 5px; }
 
-/* Gerenderte Inhalte */
 .block h1 { font-size:1.65em; font-weight:700; margin:.2em 0 .15em; padding-bottom:.2em; border-bottom:1px solid #e4e4e4; }
 .block h2 { font-size:1.3em; font-weight:600; margin:.3em 0 .15em; }
 .block h3 { font-size:1.1em; font-weight:600; margin:.2em 0 .1em; }
@@ -78,7 +64,6 @@ body {
 </head>
 <body>
 
-<!-- onmousedown="event.preventDefault()" hält Fokus auf aktiver Textarea -->
 <div id="toolbar" onmousedown="event.preventDefault()">
   <button class="tb-btn" onclick="wrapA('**','**')" title="Fett (Ctrl+B)"><b>B</b></button>
   <button class="tb-btn" onclick="wrapA('*','*')"   title="Kursiv (Ctrl+I)"><i>I</i></button>
@@ -103,9 +88,17 @@ body {
 
 // ── Zustand ───────────────────────────────────────────────────────────────────
 
-var text = '';          // Vollständiger Markdown-Inhalt (immer aktuell)
-var editingIdx = null;  // null | Zahl (Block-Index) | 'new'
-var pendingNew = '';    // Staging für neuen Block am Ende (vor dem Commit)
+var text = '';
+var editingIdx = null;   // null | Zahl | 'new'
+
+// Fester Kontext des aktiven Blocks: before/after bleiben während des Edits unveränderlich.
+// Das verhindert Duplikationen, weil syncNow nie splitBlocks auf sich selbst aufruft.
+var editCtx = null;  // { before: string, after: string }
+
+// Unterdrückt den focusout-Handler während programmatischer render()-Aufrufe,
+// weil doc.innerHTML='' die aktive Textarea aus dem DOM entfernt und dabei
+// synchron focusout mit relatedTarget=null auslöst.
+var rendering = false;
 
 var doc = document.getElementById('doc');
 
@@ -125,7 +118,7 @@ function inlineMd(raw) {
   s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
   s = s.replace(/_([^\s].*?[^\s])_/g, '<em>$1</em>');
   s = s.replace(/~~(.+?)~~/g,         '<del>$1</del>');
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
   s = s.replace(/\x00(\d+)\x00/g, function(_,i){ return '<code>'+codes[+i]+'</code>'; });
   return s;
 }
@@ -147,14 +140,14 @@ function parseMd(src) {
   function fB() { fP(); fUl(); fOl(); fT(); }
   while(i < lines.length) {
     var line = lines[i++];
-    if(/^```/.test(line)) {
+    if(/^```/.test(line)){
       if(inFence){ out.push('<pre><code'+(fLang?' class="language-'+esc(fLang)+'"':'')+'>'+esc(fLines.join('\n'))+'</code></pre>'); inFence=false; fLines=[]; fLang=''; }
-      else { fB(); inFence=true; fLang=line.slice(3).trim(); }
+      else{ fB(); inFence=true; fLang=line.slice(3).trim(); }
       continue;
     }
     if(inFence){ fLines.push(line); continue; }
     if(!line.trim()){ fB(); continue; }
-    var hm = line.match(/^(#{1,6})\s+(.*)/);
+    var hm=line.match(/^(#{1,6})\s+(.*)/);
     if(hm){ fB(); out.push('<h'+hm[1].length+'>'+inlineMd(hm[2])+'</h'+hm[1].length+'>'); continue; }
     if(/^([-*_])\1\1+\s*$/.test(line.trim())){ fB(); out.push('<hr>'); continue; }
     if(/^>\s?/.test(line)){ fB(); out.push('<blockquote>'+inlineMd(line.replace(/^>\s?/,''))+'</blockquote>'); continue; }
@@ -168,9 +161,9 @@ function parseMd(src) {
       continue;
     }
     if(tRows.length) fT();
-    var ulm = line.match(/^[-*+]\s+(.*)/);
+    var ulm=line.match(/^[-*+]\s+(.*)/);
     if(ulm){ fP(); if(!inUl){fOl();out.push('<ul>');inUl=true;} out.push('<li>'+inlineMd(ulm[1])+'</li>'); continue; }
-    var olm = line.match(/^\d+\.\s+(.*)/);
+    var olm=line.match(/^\d+\.\s+(.*)/);
     if(olm){ fP(); if(!inOl){fUl();out.push('<ol>');inOl=true;} out.push('<li>'+inlineMd(olm[1])+'</li>'); continue; }
     fUl(); fOl();
     if(!inP){ out.push('<p>'); inP=true; } else { out.push('<br>'); }
@@ -197,57 +190,59 @@ function splitBlocks(src) {
   return blocks;
 }
 
-function saveBlock(idx, content) {
-  var blocks = splitBlocks(text), b = blocks[idx];
-  if(!b) return;
-  var lines = text.split('\n');
-  var merged = lines.slice(0, b.s).concat(content.split('\n')).concat(lines.slice(b.e+1)).join('\n');
-  text = merged.replace(/\n{3,}/g, '\n\n');
+// Rekonstruiert text aus editCtx + neuem Inhalt
+function rebuildText(content) {
+  if(!editCtx) return;
+  var parts = [editCtx.before, content, editCtx.after].filter(function(s){ return s.trim(); });
+  text = parts.join('\n\n').replace(/\n{3,}/g, '\n\n');
 }
 
-function saveNew(content) {
-  if(!content.trim()) return;
-  var t = text.trimEnd();
-  text = t ? t+'\n\n'+content : content;
+// Aktiviert einen Block und setzt editCtx (einmalig bei Beginn des Edits)
+function activateBlock(idx) {
+  if(idx === 'new') {
+    editCtx = { before: text.trimEnd(), after: '' };
+  } else {
+    var blocks = splitBlocks(text);
+    var b = blocks[idx];
+    if(!b){ activateBlock('new'); return; }
+    var lines = text.split('\n');
+    editCtx = {
+      before: lines.slice(0, b.s).join('\n'),
+      after:  lines.slice(b.e + 1).join('\n')
+    };
+  }
+  editingIdx = idx;
 }
 
-// Sofort-Sync bei jedem Tastendruck: text immer aktuell halten
+// Sofort-Sync bei jedem Tastendruck (kein Duplikationsrisiko wegen festem editCtx)
 function syncNow() {
   var ta = curTa();
-  if(!ta) return;
-  if(editingIdx === 'new') {
-    pendingNew = ta.value;  // für 'new': zwischenspeichern, erst am Ende committen
-  } else if(editingIdx !== null) {
-    saveBlock(editingIdx, ta.value);  // für bestehende Blöcke: sofort in text
-  }
+  if(ta && editCtx !== null) rebuildText(ta.value);
 }
 
-// Alles committen (vor Moduswechsel oder beim Einblenden des Fensters)
+// Committet und schliesst den Edit-Modus
 function commitAll() {
   var ta = curTa();
-  if(ta) {
-    if(editingIdx === 'new') { saveNew(ta.value); pendingNew = ''; }
-    else if(editingIdx !== null) saveBlock(editingIdx, ta.value);
-  } else if(pendingNew) {
-    saveNew(pendingNew); pendingNew = '';
-  }
+  if(ta && editCtx !== null) rebuildText(ta.value);
+  editCtx = null;
+  editingIdx = null;
 }
 
-// Zu einem anderen Block wechseln
+// Wechsel zu einem anderen Block
 function switchTo(idx) {
   commitAll();
-  editingIdx = idx;
+  activateBlock(idx);
   render();
 }
 
 // ── DOM-Rendering ─────────────────────────────────────────────────────────────
 
 function render() {
+  rendering = true;
   var scrollTop = doc.scrollTop;
   doc.innerHTML = '';
   var blocks = splitBlocks(text);
 
-  // Platzhalter bei komplett leerem Dokument
   if(!blocks.length && editingIdx !== 'new') {
     var ph = mk('div', {id:'placeholder'});
     ph.textContent = 'Klicken zum Schreiben …';
@@ -255,27 +250,23 @@ function render() {
     doc.appendChild(ph);
   }
 
-  // Blöcke
   blocks.forEach(function(b, idx) {
     var div = mk('div', {className: idx===editingIdx ? 'block editing' : 'block'});
     div.dataset.idx = idx;
-
     if(idx === editingIdx) {
       div.appendChild(mkTa(b.raw));
     } else {
       div.innerHTML = parseMd(b.raw);
-      // mousedown vor blur: greift, bevor die alte Textarea weggerendert wird
       div.onmousedown = function(e) {
-        var clickedIdx = +this.dataset.idx;
-        if(clickedIdx === editingIdx) return;
-        e.preventDefault();  // Textarea behält Fokus; wir steuern selbst
-        switchTo(clickedIdx);
+        var ci = +this.dataset.idx;
+        if(ci === editingIdx) return;
+        e.preventDefault();
+        switchTo(ci);
       };
     }
     doc.appendChild(div);
   });
 
-  // Neue-Block-Zone am Ende
   var nz = mk('div', {id:'new-zone', className: editingIdx==='new' ? 'editing' : ''});
   if(editingIdx === 'new') {
     nz.appendChild(mkTa(''));
@@ -283,10 +274,9 @@ function render() {
     nz.onmousedown = function(e){ e.preventDefault(); switchTo('new'); };
   }
   doc.appendChild(nz);
-
   doc.scrollTop = scrollTop;
 
-  // Fokus + Cursor-Position am Ende
+  rendering = false;
   var ta = curTa();
   if(ta) {
     ta.focus();
@@ -298,34 +288,69 @@ function render() {
 function mkTa(val) {
   var ta = mk('textarea');
   ta.value = val;
-  ta.oninput = function(){ autoH(this); syncNow(); };  // sofort synchronisieren
+  ta.oninput  = function(){ autoH(this); syncNow(); };
   ta.onkeydown = onKey;
   return ta;
 }
 
 // ── Fokus-Verlust ─────────────────────────────────────────────────────────────
-// Sekundärer Mechanismus (Inhalt ist via syncNow bereits gespeichert)
 
 doc.addEventListener('focusout', function(e) {
-  if(doc.contains(e.relatedTarget)) return;  // Fokus bleibt in #doc
+  if(rendering) return;
+  if(doc.contains(e.relatedTarget)) return;
   if(e.target.tagName !== 'TEXTAREA') return;
   commitAll();
-  editingIdx = null;
   render();
 });
 
 // ── Tastatur ─────────────────────────────────────────────────────────────────
 
 function onKey(e) {
-  if(e.key === 'F5' || (e.ctrlKey && e.key === 'r')){ e.preventDefault(); return; }
+  if(e.key==='F5' || (e.ctrlKey && e.key==='r')){ e.preventDefault(); return; }
+
+  // ESC: Fenster schliessen
   if(e.key === 'Escape') {
     e.preventDefault();
-    commitAll();
-    editingIdx = null;
-    render();
+    commitAll(); render();
     window.ipc.postMessage('close');
     return;
   }
+
+  // Ctrl+Enter: neuen Block direkt nach dem aktuellen anlegen
+  if(e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    var content = this.value.trimEnd();
+    // Aktuellen Inhalt in "before" verschieben, neuer Block kommt danach
+    var newBefore = editCtx && editCtx.before.trim()
+      ? editCtx.before.trim() + '\n\n' + content
+      : content;
+    text = [newBefore, editCtx ? editCtx.after : ''].filter(function(s){ return s.trim(); }).join('\n\n');
+    editCtx = { before: newBefore.trimEnd(), after: editCtx ? editCtx.after : '' };
+    editingIdx = 'new';
+    render();
+    return;
+  }
+
+  // Alt+↓ / Alt+↑: zwischen Blöcken navigieren
+  if(e.altKey && (e.key==='ArrowDown' || e.key==='ArrowUp')) {
+    e.preventDefault();
+    var prevIdx = editingIdx;
+    commitAll();
+    var blocks = splitBlocks(text);
+    var n = blocks.length;
+    var target;
+    if(e.key === 'ArrowDown') {
+      target = (typeof prevIdx === 'number') ? prevIdx + 1 : n;
+      if(target >= n) target = 'new';
+    } else {
+      target = (typeof prevIdx === 'number') ? prevIdx - 1 : n - 1;
+      if(typeof target === 'number' && target < 0) target = 0;
+    }
+    activateBlock(target);
+    render();
+    return;
+  }
+
   if(e.key === 'Tab'){ e.preventDefault(); inAt(this, this.selectionStart, '  '); return; }
   if(e.ctrlKey) {
     if(e.key==='b'||e.key==='B'){ e.preventDefault(); wrapT(this,'**','**'); }
@@ -345,20 +370,19 @@ function autoH(ta) { ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px
 function curTa()   { return doc.querySelector('textarea'); }
 
 function inAt(ta, pos, s) {
-  var e = ta.selectionEnd;
-  ta.value = ta.value.slice(0,pos)+s+ta.value.slice(e);
+  var end = ta.selectionEnd;
+  ta.value = ta.value.slice(0,pos)+s+ta.value.slice(end);
   ta.selectionStart = ta.selectionEnd = pos+s.length;
   autoH(ta);
 }
 function wrapT(ta, b, a) {
   var s=ta.selectionStart, e=ta.selectionEnd, sel=ta.value.slice(s,e);
   ta.value = ta.value.slice(0,s)+b+sel+a+ta.value.slice(e);
-  ta.selectionStart = s+b.length; ta.selectionEnd = e+b.length;
+  ta.selectionStart=s+b.length; ta.selectionEnd=e+b.length;
 }
 
-// Toolbar-Aktionen (Fokus-Verlust via onmousedown.preventDefault auf #toolbar verhindert)
-function wrapA(b,a)   { var ta=curTa(); if(ta){ wrapT(ta,b,a); ta.focus(); } }
-function blockA(b,a)  {
+function wrapA(b,a) { var ta=curTa(); if(ta){ wrapT(ta,b,a); ta.focus(); } }
+function blockA(b,a){
   var ta=curTa(); if(!ta) return;
   var s=ta.selectionStart, e=ta.selectionEnd, sel=ta.value.slice(s,e);
   ta.value=ta.value.slice(0,s)+b+sel+a+ta.value.slice(e);
@@ -376,11 +400,20 @@ function prefA(p) {
 // ── API für Rust ──────────────────────────────────────────────────────────────
 
 window.wysiwyg = {
-  // Beim Einblenden: ggf. noch nicht committeten Inhalt sichern, dann rendern
   show: function() {
     commitAll();
-    editingIdx = null;
+    var blocks = splitBlocks(text);
+    if(blocks.length > 0) {
+      activateBlock(blocks.length - 1);
+    } else {
+      activateBlock('new');
+    }
     render();
+    var ta = curTa();
+    if(ta) ta.scrollIntoView({ block: 'nearest' });
+    // Verzögerter Fokus als Backup: WM_SETFOCUS leitet Win32-Fokus ans WebView2-Child
+    // weiter, aber der Browser benötigt ggf. einen Tick bis das DOM-Fokus-System bereit ist.
+    setTimeout(function() { var t = curTa(); if(t) t.focus(); }, 50);
   }
 };
 

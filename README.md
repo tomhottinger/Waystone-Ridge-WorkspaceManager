@@ -20,8 +20,9 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
   Ist das Fenster bereits aktiv auf dem aktuellen Workspace, wird es stattdessen **minimiert** (Toggle).
   Wird kein passendes Fenster gefunden, kann optional eine **Kommandozeile** gestartet werden.
 - **Markdown-Schnellnotiz (WYSIWYG)**: randloses, always-on-top Fenster mit WebView2.
-  Split-Pane: links Markdown-Editor, rechts Live-Vorschau. Per konfigurierbarem Hotkey
-  ein-/ausgeblendet. Inhalt bleibt erhalten. Toolbar für Formatierung, Tastaturkürzel.
+  Typora-ähnlicher Block-Editor: Blöcke werden gerendert angezeigt, der aktive Block
+  zeigt seinen Markdown-Quelltext. Per konfigurierbarem Hotkey ein-/ausgeblendet.
+  Inhalt bleibt erhalten. Toolbar, Tastaturkürzel, Maus- und Tastaturnavigation.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
@@ -182,7 +183,10 @@ quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = 14 px Stan
 | `Ctrl+I` | Kursiv (`*text*`) |
 | `Ctrl+K` | Inline-Code (`` `text` ``) |
 | `Tab` | 2 Leerzeichen einfügen |
-| `Enter` | Zeilenumbruch (kein Schließen) |
+| `Enter` | Zeilenumbruch innerhalb eines Blocks |
+| `Ctrl+Enter` | Neuen Block direkt nach dem aktuellen anlegen |
+| `Alt+↓` | Nächsten Block aktivieren (oder neuen am Ende) |
+| `Alt+↑` | Vorherigen Block aktivieren |
 
 **Unterstützte Markdown-Elemente:** Überschriften (H1–H6), Fett/Kursiv/Durchgestrichen,
 Inline-Code und Code-Blöcke (mit Sprachkennung), Blockquotes, Listen (geordnet/ungeordnet),
@@ -243,8 +247,8 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
 | `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |
 | `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
-| `quick_input.rs` | Markdown-Schnellnotiz: Split-Pane WYSIWYG-Editor via WebView2 |
-| `quick_input.html` | HTML/JS für Editor (Markdown-Parser, Toolbar, Live-Vorschau) |
+| `quick_input.rs` | Markdown-Schnellnotiz: WYSIWYG-Block-Editor via WebView2 |
+| `quick_input.html` | HTML/JS für Editor (Markdown-Parser, Toolbar, Block-Editing) |
 
 ## Tests
 

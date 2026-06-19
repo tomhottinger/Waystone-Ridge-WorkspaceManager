@@ -8,10 +8,12 @@ use anyhow::Result;
 use windows::core::w;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetForegroundWindow, GetSystemMetrics,
-    IsWindowVisible, RegisterClassW, SetForegroundWindow, ShowWindow, HMENU, SM_CXSCREEN,
-    SM_CYSCREEN, SW_HIDE, SW_SHOW, WNDCLASSW, WM_ACTIVATE, WS_EX_TOPMOST, WS_POPUP,
+    GetWindow, IsWindowVisible, RegisterClassW, SetForegroundWindow, ShowWindow, HMENU,
+    GW_CHILD, SM_CXSCREEN, SM_CYSCREEN, SW_HIDE, SW_SHOW, WNDCLASSW, WM_ACTIVATE,
+    WM_SETFOCUS, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use wry::dpi::{PhysicalPosition, PhysicalSize};
@@ -167,6 +169,15 @@ unsafe extern "system" fn parent_wndproc(
     // Fokus geht durch den auslösenden Klick automatisch zum anderen Fenster.
     if msg == WM_ACTIVATE && (wparam.0 & 0xFFFF) == 0 {
         let _ = ShowWindow(hwnd, SW_HIDE);
+        return LRESULT(0);
+    }
+    // WM_SETFOCUS: Win32-Tastaturfokus an das WebView2-Childfenster weiterleiten.
+    // Ohne das erhält das WebView2-Child keinen Fokus, wenn das Elternfenster
+    // nach einem Hide/Show per SetForegroundWindow wieder in den Vordergrund kommt.
+    if msg == WM_SETFOCUS {
+        if let Ok(child) = GetWindow(hwnd, GW_CHILD) {
+            let _ = SetFocus(child);
+        }
         return LRESULT(0);
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
