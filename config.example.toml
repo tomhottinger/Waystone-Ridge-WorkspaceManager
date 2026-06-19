@@ -31,18 +31,19 @@ overlay_corner = "top_right"
 #           sofort aus der Ansicht und ist auf dem Zielworkspace verfügbar
 move_window_follow = true
 
-# Schnelleingabe-Textfeld (Memo): ein randloses, immer-oben Fenster, das per
-# Hotkey ein- und ausgeblendet wird. Mehrere Zeilen möglich; der Text bleibt
+# Markdown-Schnellnotiz: randloses, immer-oben Fenster mit WebView2-Editor.
+# Split-Pane: links Markdown-Eingabe, rechts Live-Vorschau. Der Text bleibt
 # zwischen den Sitzungen erhalten. ESC oder Fokusverlust blendet es aus und
 # gibt den Fokus zurück. Das Fenster erscheint zentriert auf dem Bildschirm.
-# Ohne diesen Eintrag ist das Feld deaktiviert.
+# Voraussetzung: WebView2-Runtime (auf Windows 10/11 vorinstalliert via Edge).
+# Ohne diesen Eintrag ist die Funktion deaktiviert.
 # quick_input_hotkey = "Ctrl+Space"
 #
 # Fenstergröße in Prozent der Bildschirmmaße (erlaubte Werte: 5–95):
 # quick_input_width_pct  = 40   # Standard: 40 % der Bildschirmbreite
 # quick_input_height_pct = 30   # Standard: 30 % der Bildschirmhöhe
 #
-# Schriftgröße in Punkt (0 = Windows-Standardschrift, z. B. Segoe UI 9 pt):
+# Schriftgröße in Punkt (0 = 14 px Standard):
 # quick_input_font_size  = 0    # Beispiel: 14 für 14-Punkt-Schrift
 
 

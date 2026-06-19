@@ -19,9 +19,9 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
   Das Fenster erhält automatisch den Fokus und wird in den Vordergrund gebracht.
   Ist das Fenster bereits aktiv auf dem aktuellen Workspace, wird es stattdessen **minimiert** (Toggle).
   Wird kein passendes Fenster gefunden, kann optional eine **Kommandozeile** gestartet werden.
-- **Schnelleingabe-Textfeld (Memo)**: randloses, always-on-top Textfeld, das per
-  konfigurierbarem Hotkey ein- und ausgeblendet wird. Mehrzeilig, Inhalt bleibt erhalten,
-  Größe in % der Bildschirmmaße konfigurierbar.
+- **Markdown-Schnellnotiz (WYSIWYG)**: randloses, always-on-top Fenster mit WebView2.
+  Split-Pane: links Markdown-Editor, rechts Live-Vorschau. Per konfigurierbarem Hotkey
+  ein-/ausgeblendet. Inhalt bleibt erhalten. Toolbar für Formatierung, Tastaturkürzel.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
@@ -144,19 +144,18 @@ launch_dir = "C:\\dev"
 - Enthält der Befehl keine Anführungszeichen, kann auch eine Literal-String verwendet werden: `launch = 'pfad\programm.exe'`
 - Beliebig viele `[[summons]]`-Blöcke möglich, auch keiner.
 
-### Schnelleingabe-Textfeld (Memo)
+### Markdown-Schnellnotiz
 
-Ein randloses, immer-oben Fenster, das per Hotkey ein- und ausgeblendet wird.
-Mehrere Zeilen möglich — verhält sich wie ein kleines Notizfeld.
-Der Inhalt **bleibt zwischen den Sitzungen erhalten**.
+Ein randloses, immer-oben Fenster mit **Markdown WYSIWYG-Editor** (WebView2).
+Links: Markdown-Eingabe. Rechts: Live-Vorschau. Der Inhalt **bleibt zwischen den Sitzungen erhalten**.
 
-Das Fenster erscheint **zentriert** auf dem Bildschirm mit weißem Hintergrund und schwarzem Text.
+Das Fenster erscheint **zentriert** auf dem Bildschirm.
 
 ```toml
 quick_input_hotkey     = "Ctrl+Space"  # beliebige Hotkey-Kombination
 quick_input_width_pct  = 40            # Breite in % der Bildschirmbreite (Standard: 40)
 quick_input_height_pct = 30            # Höhe in % der Bildschirmhöhe   (Standard: 30)
-quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = Windows-Standard)
+quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = 14 px Standard)
 ```
 
 | Feld | Pflicht | Beschreibung |
@@ -164,19 +163,33 @@ quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = Windows-St
 | `quick_input_hotkey` | ja (zum Aktivieren) | Hotkey-Format wie bei Workspaces |
 | `quick_input_width_pct` | nein | Fensterbreite 5–95 % der Bildschirmbreite (Standard: 40) |
 | `quick_input_height_pct` | nein | Fensterhöhe 5–95 % der Bildschirmhöhe (Standard: 30) |
-| `quick_input_font_size` | nein | Schriftgröße in Punkt; 0 = Windows-Standard (Segoe UI 9 pt) |
+| `quick_input_font_size` | nein | Schriftgröße in Punkt; 0 = 14 px Standard |
 
-**Verhalten:**
+**Fensterverhalten:**
 
 | Aktion | Ergebnis |
 |--------|----------|
-| Hotkey (Feld unsichtbar) | Feld erscheint, erhält den Fokus |
-| Hotkey (Feld sichtbar) | Feld verschwindet, Fokus kehrt zurück |
-| `ESC` | Feld verschwindet, Fokus kehrt zurück |
-| Klick woanders | Feld verschwindet automatisch |
+| Hotkey (Fenster unsichtbar) | Fenster erscheint, Editor erhält Fokus |
+| Hotkey (Fenster sichtbar) | Fenster verschwindet, Fokus kehrt zurück |
+| `ESC` | Fenster verschwindet, Fokus kehrt zurück |
+| Klick woanders | Fenster verschwindet automatisch |
+
+**Tastaturkürzel im Editor:**
+
+| Kürzel | Aktion |
+|--------|--------|
+| `Ctrl+B` | Fett (`**text**`) |
+| `Ctrl+I` | Kursiv (`*text*`) |
+| `Ctrl+K` | Inline-Code (`` `text` ``) |
+| `Tab` | 2 Leerzeichen einfügen |
 | `Enter` | Zeilenumbruch (kein Schließen) |
 
-Das Feld ist deaktiviert, solange `quick_input_hotkey` nicht gesetzt ist.
+**Unterstützte Markdown-Elemente:** Überschriften (H1–H6), Fett/Kursiv/Durchgestrichen,
+Inline-Code und Code-Blöcke (mit Sprachkennung), Blockquotes, Listen (geordnet/ungeordnet),
+Tabellen, horizontale Linien, Links.
+
+Das Fenster ist deaktiviert, solange `quick_input_hotkey` nicht gesetzt ist.
+Voraussetzung: Microsoft Edge / WebView2-Runtime (auf Windows 10/11 vorinstalliert).
 
 ## Bedienung
 
@@ -230,7 +243,8 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
 | `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |
 | `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
-| `quick_input.rs` | Randloses Memo-Textfeld (Hotkey, Mehrzeilen, Größe konfigurierbar) |
+| `quick_input.rs` | Markdown-Schnellnotiz: Split-Pane WYSIWYG-Editor via WebView2 |
+| `quick_input.html` | HTML/JS für Editor (Markdown-Parser, Toolbar, Live-Vorschau) |
 
 ## Tests
 

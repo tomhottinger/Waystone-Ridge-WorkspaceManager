@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  display: flex; flex-direction: column;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: {FONT_SIZE}px;
+  color: #111; background: #fff;
+}
+#toolbar {
+  display: flex; gap: 4px; padding: 5px 8px;
+  background: #f4f4f4; border-bottom: 1px solid #d8d8d8;
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.tb-btn {
+  padding: 2px 9px; border: 1px solid #bbb; border-radius: 3px;
+  background: #fff; cursor: pointer; font-size: 12px;
+  font-family: inherit; line-height: 1.5; user-select: none;
+}
+.tb-btn:hover { background: #e8e8e8; }
+.tb-sep { width: 1px; background: #ccc; margin: 2px 3px; align-self: stretch; }
+
+#doc { flex: 1; overflow-y: auto; padding: 14px 22px; cursor: text; }
+
+/* Block im Render-Zustand */
+.block {
+  border-radius: 3px; padding: 2px 5px; margin-bottom: 5px; min-height: 1.5em;
+}
+.block:not(.editing):hover { background: rgba(0,0,0,.04); }
+
+/* Block im Editier-Zustand */
+.block.editing textarea {
+  width: 100%; border: 1px solid #b8d4ff; border-radius: 3px; outline: none;
+  background: #fafcff; padding: 5px 7px;
+  font-family: 'Cascadia Code','Consolas','Courier New',monospace;
+  font-size: {FONT_SIZE}px; color: #1a1a1a; line-height: 1.6;
+  resize: none; display: block; overflow: hidden; min-height: 1.8em;
+}
+
+/* Neue-Block-Zone am Ende */
+#new-zone { min-height: 64px; padding: 2px 5px; }
+#new-zone.editing textarea {
+  width: 100%; border: 1px solid #b8d4ff; border-radius: 3px; outline: none;
+  background: #fafcff; padding: 5px 7px;
+  font-family: 'Cascadia Code','Consolas','Courier New',monospace;
+  font-size: {FONT_SIZE}px; color: #1a1a1a; line-height: 1.6;
+  resize: none; display: block; overflow: hidden; min-height: 1.8em;
+}
+
+#placeholder { color: #bbb; font-style: italic; padding: 2px 5px; }
+
+/* Gerenderte Inhalte */
+.block h1 { font-size:1.65em; font-weight:700; margin:.2em 0 .15em; padding-bottom:.2em; border-bottom:1px solid #e4e4e4; }
+.block h2 { font-size:1.3em; font-weight:600; margin:.3em 0 .15em; }
+.block h3 { font-size:1.1em; font-weight:600; margin:.2em 0 .1em; }
+.block h4,.block h5,.block h6 { font-size:1em; font-weight:600; margin:.15em 0 .1em; }
+.block p { margin:.15em 0; line-height:1.65; }
+.block ul,.block ol { margin:.1em 0 .1em 1.4em; }
+.block li { line-height:1.6; }
+.block code { background:#f0f0f0; padding:1px 5px; border-radius:3px; font-size:.88em; font-family:'Cascadia Code','Consolas',monospace; }
+.block pre { background:#f4f4f4; border-radius:5px; padding:10px 13px; overflow-x:auto; border:1px solid #e4e4e4; }
+.block pre code { background:none; padding:0; font-size:.9em; }
+.block blockquote { border-left:3px solid #bbb; padding-left:12px; color:#555; margin:.1em 0 .1em .2em; }
+.block strong { font-weight:700; }
+.block em { font-style:italic; }
+.block del { text-decoration:line-through; color:#888; }
+.block hr { border:none; border-top:1px solid #ddd; margin:.3em 0; }
+.block a { color:#0066cc; text-decoration:none; }
+.block a:hover { text-decoration:underline; }
+.block table { border-collapse:collapse; margin:.2em 0; }
+.block th,.block td { border:1px solid #d0d0d0; padding:3px 9px; }
+.block th { background:#f4f4f4; font-weight:600; text-align:left; }
+</style>
+</head>
+<body>
+
+<!-- onmousedown="event.preventDefault()" hält Fokus auf aktiver Textarea -->
+<div id="toolbar" onmousedown="event.preventDefault()">
+  <button class="tb-btn" onclick="wrapA('**','**')" title="Fett (Ctrl+B)"><b>B</b></button>
+  <button class="tb-btn" onclick="wrapA('*','*')"   title="Kursiv (Ctrl+I)"><i>I</i></button>
+  <button class="tb-btn" onclick="wrapA('~~','~~')" title="Durchgestrichen"><s>S</s></button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" onclick="wrapA('`','`')"          title="Inline-Code (Ctrl+K)">Code</button>
+  <button class="tb-btn" onclick="blockA('```\n','\n```')" title="Code-Block">```</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" onclick="prefA('# ')"   title="Überschrift 1">H1</button>
+  <button class="tb-btn" onclick="prefA('## ')"  title="Überschrift 2">H2</button>
+  <button class="tb-btn" onclick="prefA('### ')" title="Überschrift 3">H3</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" onclick="prefA('- ')"  title="Liste">•</button>
+  <button class="tb-btn" onclick="prefA('1. ')" title="Nummerierte Liste">1.</button>
+  <button class="tb-btn" onclick="prefA('> ')"  title="Zitat">&gt;</button>
+</div>
+<div id="doc"></div>
+
+<script>
+(function () {
+'use strict';
+
+// ── Zustand ───────────────────────────────────────────────────────────────────
+
+var text = '';          // Vollständiger Markdown-Inhalt (immer aktuell)
+var editingIdx = null;  // null | Zahl (Block-Index) | 'new'
+var pendingNew = '';    // Staging für neuen Block am Ende (vor dem Commit)
+
+var doc = document.getElementById('doc');
+
+// ── Markdown-Parser ───────────────────────────────────────────────────────────
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function inlineMd(raw) {
+  var codes = [];
+  var s = raw.replace(/`([^`]+)`/g, function(_,c){ codes.push(esc(c)); return '\x00'+(codes.length-1)+'\x00'; });
+  s = esc(s);
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+  s = s.replace(/___(.+?)___/g,       '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>');
+  s = s.replace(/__(.+?)__/g,         '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
+  s = s.replace(/_([^\s].*?[^\s])_/g, '<em>$1</em>');
+  s = s.replace(/~~(.+?)~~/g,         '<del>$1</del>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  s = s.replace(/\x00(\d+)\x00/g, function(_,i){ return '<code>'+codes[+i]+'</code>'; });
+  return s;
+}
+function parseMd(src) {
+  var lines=src.split('\n'), out=[], i=0;
+  var inFence=false, fLang='', fLines=[];
+  var inUl=false, inOl=false, inP=false;
+  var tRows=[], tBody=false;
+  function fP()  { if(inP)  { out.push('</p>');  inP=false; } }
+  function fUl() { if(inUl) { out.push('</ul>'); inUl=false; } }
+  function fOl() { if(inOl) { out.push('</ol>'); inOl=false; } }
+  function fT()  {
+    if(!tRows.length) return;
+    out.push('<table>');
+    tRows.forEach(function(r){ out.push(r); });
+    if(tBody){ out.push('</tbody>'); tBody=false; }
+    out.push('</table>'); tRows=[];
+  }
+  function fB() { fP(); fUl(); fOl(); fT(); }
+  while(i < lines.length) {
+    var line = lines[i++];
+    if(/^```/.test(line)) {
+      if(inFence){ out.push('<pre><code'+(fLang?' class="language-'+esc(fLang)+'"':'')+'>'+esc(fLines.join('\n'))+'</code></pre>'); inFence=false; fLines=[]; fLang=''; }
+      else { fB(); inFence=true; fLang=line.slice(3).trim(); }
+      continue;
+    }
+    if(inFence){ fLines.push(line); continue; }
+    if(!line.trim()){ fB(); continue; }
+    var hm = line.match(/^(#{1,6})\s+(.*)/);
+    if(hm){ fB(); out.push('<h'+hm[1].length+'>'+inlineMd(hm[2])+'</h'+hm[1].length+'>'); continue; }
+    if(/^([-*_])\1\1+\s*$/.test(line.trim())){ fB(); out.push('<hr>'); continue; }
+    if(/^>\s?/.test(line)){ fB(); out.push('<blockquote>'+inlineMd(line.replace(/^>\s?/,''))+'</blockquote>'); continue; }
+    if(/^\|/.test(line)){
+      if(/^\|[-| :]+\|$/.test(line.trim())){
+        if(tRows.length===1){ tRows[0]=tRows[0].replace(/<td>/g,'<th>').replace(/<\/td>/g,'</th>').replace('<tr>','<thead><tr>').replace('</tr>','</tr></thead><tbody>'); tBody=true; }
+        continue;
+      }
+      fP(); fUl(); fOl();
+      tRows.push('<tr>'+line.split('|').slice(1,-1).map(function(c){ return '<td>'+inlineMd(c.trim())+'</td>'; }).join('')+'</tr>');
+      continue;
+    }
+    if(tRows.length) fT();
+    var ulm = line.match(/^[-*+]\s+(.*)/);
+    if(ulm){ fP(); if(!inUl){fOl();out.push('<ul>');inUl=true;} out.push('<li>'+inlineMd(ulm[1])+'</li>'); continue; }
+    var olm = line.match(/^\d+\.\s+(.*)/);
+    if(olm){ fP(); if(!inOl){fUl();out.push('<ol>');inOl=true;} out.push('<li>'+inlineMd(olm[1])+'</li>'); continue; }
+    fUl(); fOl();
+    if(!inP){ out.push('<p>'); inP=true; } else { out.push('<br>'); }
+    out.push(inlineMd(line));
+  }
+  fB();
+  if(inFence && fLines.length) out.push('<pre><code>'+esc(fLines.join('\n'))+'</code></pre>');
+  return out.join('');
+}
+
+// ── Block-Verwaltung ──────────────────────────────────────────────────────────
+
+function splitBlocks(src) {
+  var lines=src.split('\n'), blocks=[], start=null, fence=false;
+  for(var i=0; i<lines.length; i++){
+    if(/^`{3}/.test(lines[i])) fence=!fence;
+    if(!fence && lines[i].trim()===''){
+      if(start!==null){ blocks.push({raw:lines.slice(start,i).join('\n'), s:start, e:i-1}); start=null; }
+    } else {
+      if(start===null) start=i;
+    }
+  }
+  if(start!==null) blocks.push({raw:lines.slice(start).join('\n'), s:start, e:lines.length-1});
+  return blocks;
+}
+
+function saveBlock(idx, content) {
+  var blocks = splitBlocks(text), b = blocks[idx];
+  if(!b) return;
+  var lines = text.split('\n');
+  var merged = lines.slice(0, b.s).concat(content.split('\n')).concat(lines.slice(b.e+1)).join('\n');
+  text = merged.replace(/\n{3,}/g, '\n\n');
+}
+
+function saveNew(content) {
+  if(!content.trim()) return;
+  var t = text.trimEnd();
+  text = t ? t+'\n\n'+content : content;
+}
+
+// Sofort-Sync bei jedem Tastendruck: text immer aktuell halten
+function syncNow() {
+  var ta = curTa();
+  if(!ta) return;
+  if(editingIdx === 'new') {
+    pendingNew = ta.value;  // für 'new': zwischenspeichern, erst am Ende committen
+  } else if(editingIdx !== null) {
+    saveBlock(editingIdx, ta.value);  // für bestehende Blöcke: sofort in text
+  }
+}
+
+// Alles committen (vor Moduswechsel oder beim Einblenden des Fensters)
+function commitAll() {
+  var ta = curTa();
+  if(ta) {
+    if(editingIdx === 'new') { saveNew(ta.value); pendingNew = ''; }
+    else if(editingIdx !== null) saveBlock(editingIdx, ta.value);
+  } else if(pendingNew) {
+    saveNew(pendingNew); pendingNew = '';
+  }
+}
+
+// Zu einem anderen Block wechseln
+function switchTo(idx) {
+  commitAll();
+  editingIdx = idx;
+  render();
+}
+
+// ── DOM-Rendering ─────────────────────────────────────────────────────────────
+
+function render() {
+  var scrollTop = doc.scrollTop;
+  doc.innerHTML = '';
+  var blocks = splitBlocks(text);
+
+  // Platzhalter bei komplett leerem Dokument
+  if(!blocks.length && editingIdx !== 'new') {
+    var ph = mk('div', {id:'placeholder'});
+    ph.textContent = 'Klicken zum Schreiben …';
+    ph.onmousedown = function(e){ e.preventDefault(); switchTo('new'); };
+    doc.appendChild(ph);
+  }
+
+  // Blöcke
+  blocks.forEach(function(b, idx) {
+    var div = mk('div', {className: idx===editingIdx ? 'block editing' : 'block'});
+    div.dataset.idx = idx;
+
+    if(idx === editingIdx) {
+      div.appendChild(mkTa(b.raw));
+    } else {
+      div.innerHTML = parseMd(b.raw);
+      // mousedown vor blur: greift, bevor die alte Textarea weggerendert wird
+      div.onmousedown = function(e) {
+        var clickedIdx = +this.dataset.idx;
+        if(clickedIdx === editingIdx) return;
+        e.preventDefault();  // Textarea behält Fokus; wir steuern selbst
+        switchTo(clickedIdx);
+      };
+    }
+    doc.appendChild(div);
+  });
+
+  // Neue-Block-Zone am Ende
+  var nz = mk('div', {id:'new-zone', className: editingIdx==='new' ? 'editing' : ''});
+  if(editingIdx === 'new') {
+    nz.appendChild(mkTa(''));
+  } else {
+    nz.onmousedown = function(e){ e.preventDefault(); switchTo('new'); };
+  }
+  doc.appendChild(nz);
+
+  doc.scrollTop = scrollTop;
+
+  // Fokus + Cursor-Position am Ende
+  var ta = curTa();
+  if(ta) {
+    ta.focus();
+    if(editingIdx !== 'new') ta.setSelectionRange(ta.value.length, ta.value.length);
+    autoH(ta);
+  }
+}
+
+function mkTa(val) {
+  var ta = mk('textarea');
+  ta.value = val;
+  ta.oninput = function(){ autoH(this); syncNow(); };  // sofort synchronisieren
+  ta.onkeydown = onKey;
+  return ta;
+}
+
+// ── Fokus-Verlust ─────────────────────────────────────────────────────────────
+// Sekundärer Mechanismus (Inhalt ist via syncNow bereits gespeichert)
+
+doc.addEventListener('focusout', function(e) {
+  if(doc.contains(e.relatedTarget)) return;  // Fokus bleibt in #doc
+  if(e.target.tagName !== 'TEXTAREA') return;
+  commitAll();
+  editingIdx = null;
+  render();
+});
+
+// ── Tastatur ─────────────────────────────────────────────────────────────────
+
+function onKey(e) {
+  if(e.key === 'F5' || (e.ctrlKey && e.key === 'r')){ e.preventDefault(); return; }
+  if(e.key === 'Escape') {
+    e.preventDefault();
+    commitAll();
+    editingIdx = null;
+    render();
+    window.ipc.postMessage('close');
+    return;
+  }
+  if(e.key === 'Tab'){ e.preventDefault(); inAt(this, this.selectionStart, '  '); return; }
+  if(e.ctrlKey) {
+    if(e.key==='b'||e.key==='B'){ e.preventDefault(); wrapT(this,'**','**'); }
+    if(e.key==='i'||e.key==='I'){ e.preventDefault(); wrapT(this,'*','*'); }
+    if(e.key==='k'||e.key==='K'){ e.preventDefault(); wrapT(this,'`','`'); }
+  }
+}
+
+// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
+
+function mk(tag, props) {
+  var e = document.createElement(tag);
+  if(props) Object.keys(props).forEach(function(k){ e[k]=props[k]; });
+  return e;
+}
+function autoH(ta) { ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; }
+function curTa()   { return doc.querySelector('textarea'); }
+
+function inAt(ta, pos, s) {
+  var e = ta.selectionEnd;
+  ta.value = ta.value.slice(0,pos)+s+ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = pos+s.length;
+  autoH(ta);
+}
+function wrapT(ta, b, a) {
+  var s=ta.selectionStart, e=ta.selectionEnd, sel=ta.value.slice(s,e);
+  ta.value = ta.value.slice(0,s)+b+sel+a+ta.value.slice(e);
+  ta.selectionStart = s+b.length; ta.selectionEnd = e+b.length;
+}
+
+// Toolbar-Aktionen (Fokus-Verlust via onmousedown.preventDefault auf #toolbar verhindert)
+function wrapA(b,a)   { var ta=curTa(); if(ta){ wrapT(ta,b,a); ta.focus(); } }
+function blockA(b,a)  {
+  var ta=curTa(); if(!ta) return;
+  var s=ta.selectionStart, e=ta.selectionEnd, sel=ta.value.slice(s,e);
+  ta.value=ta.value.slice(0,s)+b+sel+a+ta.value.slice(e);
+  ta.selectionStart=s+b.length; ta.selectionEnd=s+b.length+sel.length;
+  autoH(ta); ta.focus();
+}
+function prefA(p) {
+  var ta=curTa(); if(!ta) return;
+  var s=ta.selectionStart, ls=ta.value.lastIndexOf('\n',s-1)+1;
+  ta.value=ta.value.slice(0,ls)+p+ta.value.slice(ls);
+  ta.selectionStart=ta.selectionEnd=s+p.length;
+  autoH(ta); ta.focus();
+}
+
+// ── API für Rust ──────────────────────────────────────────────────────────────
+
+window.wysiwyg = {
+  // Beim Einblenden: ggf. noch nicht committeten Inhalt sichern, dann rendern
+  show: function() {
+    commitAll();
+    editingIdx = null;
+    render();
+  }
+};
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+render();
+
+})();
+</script>
+</body>
+</html>
