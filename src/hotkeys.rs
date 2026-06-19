@@ -22,6 +22,8 @@ pub enum Action {
     /// Workspace holen (Groß-/Kleinschreibung wird ignoriert). Wird kein Fenster
     /// gefunden und `launch` ist gesetzt, wird dieser Befehl gestartet.
     Summon { title: String, launch: Option<String>, launch_dir: Option<String> },
+    /// Randloses Texteingabefeld ein- oder ausblenden.
+    ToggleQuickInput,
 }
 
 /// Geparster Hotkey: Modifier-Maske und virtueller Tastencode.

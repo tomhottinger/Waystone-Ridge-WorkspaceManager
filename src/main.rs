@@ -17,6 +17,7 @@ mod info_dialog;
 mod logging;
 mod monitors;
 mod overlay;
+mod quick_input;
 mod windows;
 mod workspace;
 
@@ -69,6 +70,8 @@ struct AppState {
     last_monitor_ids: Vec<String>,
     /// Optionales Desktop-Overlay (nur wenn show_overlay = true in config.toml).
     overlay: Option<overlay::Overlay>,
+    /// Optionales randloses Schnelleingabe-Fenster.
+    quick_input: Option<quick_input::QuickInput>,
 }
 
 impl AppState {
@@ -169,6 +172,22 @@ fn run() -> Result<()> {
         None
     };
 
+    // Schnelleingabe-Fenster erzeugen, wenn ein Hotkey konfiguriert ist.
+    let quick_input = if cfg.quick_input_hotkey.is_some() {
+        match quick_input::QuickInput::create(cfg.quick_input_width_pct, cfg.quick_input_height_pct, cfg.quick_input_font_size) {
+            Ok(qi) => {
+                tracing::info!("Quick-Input-Fenster erstellt");
+                Some(qi)
+            }
+            Err(e) => {
+                tracing::warn!("Quick-Input-Fenster konnte nicht erstellt werden: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Zustand boxen und Zeiger im Fenster hinterlegen.
     let state = Box::new(AppState {
         manager,
@@ -181,6 +200,7 @@ fn run() -> Result<()> {
         keyboard_hook,
         last_monitor_ids,
         overlay,
+        quick_input,
     });
     let state_ptr = Box::into_raw(state);
     unsafe {
@@ -265,6 +285,9 @@ fn register_hotkeys(hwnd: HWND, cfg: &config::Config) -> (HashMap<i32, Action>, 
             &mut actions,
             &mut ids,
         );
+    }
+    if let Some(spec) = &cfg.quick_input_hotkey {
+        register_one(hwnd, spec, Action::ToggleQuickInput, &mut next_id, &mut actions, &mut ids);
     }
     (actions, ids)
 }
@@ -547,6 +570,11 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
                     }
                 } else {
                     tracing::debug!("Summon: kein Fenster mit Titel-Substring '{}' gefunden", title);
+                }
+            }
+            Action::ToggleQuickInput => {
+                if let Some(ref qi) = state.quick_input {
+                    qi.toggle();
                 }
             }
         }

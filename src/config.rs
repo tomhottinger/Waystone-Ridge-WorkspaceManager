@@ -53,6 +53,18 @@ fn default_true() -> bool {
     true
 }
 
+fn default_quick_input_width_pct() -> u32 {
+    40
+}
+
+fn default_quick_input_height_pct() -> u32 {
+    30
+}
+
+fn default_quick_input_font_size() -> u32 {
+    0
+}
+
 /// Gesamte Konfiguration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -70,6 +82,18 @@ pub struct Config {
     /// Nach dem Verschieben eines Fensters in den Zielworkspace wechseln (Standard: true).
     #[serde(default = "default_true")]
     pub move_window_follow: bool,
+    /// Hotkey für das randlose Schnelleingabe-Textfeld (Standard: nicht belegt).
+    #[serde(default)]
+    pub quick_input_hotkey: Option<String>,
+    /// Breite des Schnelleingabe-Felds in Prozent der Bildschirmbreite (Standard: 40).
+    #[serde(default = "default_quick_input_width_pct")]
+    pub quick_input_width_pct: u32,
+    /// Höhe des Schnelleingabe-Felds in Prozent der Bildschirmhöhe (Standard: 30).
+    #[serde(default = "default_quick_input_height_pct")]
+    pub quick_input_height_pct: u32,
+    /// Schriftgröße des Schnelleingabe-Felds in Punkt (Standard: 0 = Windows-Standardschrift).
+    #[serde(default = "default_quick_input_font_size")]
+    pub quick_input_font_size: u32,
 }
 
 /// Pfad zur `config.toml` neben der ausführbaren Datei.
@@ -136,6 +160,8 @@ pub const DEFAULT_CONFIG: &str = r#"# Workspace Manager – Konfiguration
 #   move_window_follow  = true/false   – nach dem Verschieben in den Zielworkspace wechseln
 #                                        true  = in den Zielworkspace wechseln (Standard)
 #                                        false = auf dem aktuellen Workspace bleiben
+#   quick_input_hotkey  = "Ctrl+Space" – Hotkey für das randlose Schnelleingabe-Textfeld
+#                                        (Standard: nicht belegt)
 #
 # Summon-Hotkeys – Fenster per Titelsuche holen (beliebig viele Blöcke):
 # [[summons]]

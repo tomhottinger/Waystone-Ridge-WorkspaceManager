@@ -19,6 +19,9 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
   Das Fenster erhält automatisch den Fokus und wird in den Vordergrund gebracht.
   Ist das Fenster bereits aktiv auf dem aktuellen Workspace, wird es stattdessen **minimiert** (Toggle).
   Wird kein passendes Fenster gefunden, kann optional eine **Kommandozeile** gestartet werden.
+- **Schnelleingabe-Textfeld (Memo)**: randloses, always-on-top Textfeld, das per
+  konfigurierbarem Hotkey ein- und ausgeblendet wird. Mehrzeilig, Inhalt bleibt erhalten,
+  Größe in % der Bildschirmmaße konfigurierbar.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
@@ -141,6 +144,40 @@ launch_dir = "C:\\dev"
 - Enthält der Befehl keine Anführungszeichen, kann auch eine Literal-String verwendet werden: `launch = 'pfad\programm.exe'`
 - Beliebig viele `[[summons]]`-Blöcke möglich, auch keiner.
 
+### Schnelleingabe-Textfeld (Memo)
+
+Ein randloses, immer-oben Fenster, das per Hotkey ein- und ausgeblendet wird.
+Mehrere Zeilen möglich — verhält sich wie ein kleines Notizfeld.
+Der Inhalt **bleibt zwischen den Sitzungen erhalten**.
+
+Das Fenster erscheint **zentriert** auf dem Bildschirm mit weißem Hintergrund und schwarzem Text.
+
+```toml
+quick_input_hotkey     = "Ctrl+Space"  # beliebige Hotkey-Kombination
+quick_input_width_pct  = 40            # Breite in % der Bildschirmbreite (Standard: 40)
+quick_input_height_pct = 30            # Höhe in % der Bildschirmhöhe   (Standard: 30)
+quick_input_font_size  = 0             # Schriftgröße in Punkt (0 = Windows-Standard)
+```
+
+| Feld | Pflicht | Beschreibung |
+|------|---------|--------------|
+| `quick_input_hotkey` | ja (zum Aktivieren) | Hotkey-Format wie bei Workspaces |
+| `quick_input_width_pct` | nein | Fensterbreite 5–95 % der Bildschirmbreite (Standard: 40) |
+| `quick_input_height_pct` | nein | Fensterhöhe 5–95 % der Bildschirmhöhe (Standard: 30) |
+| `quick_input_font_size` | nein | Schriftgröße in Punkt; 0 = Windows-Standard (Segoe UI 9 pt) |
+
+**Verhalten:**
+
+| Aktion | Ergebnis |
+|--------|----------|
+| Hotkey (Feld unsichtbar) | Feld erscheint, erhält den Fokus |
+| Hotkey (Feld sichtbar) | Feld verschwindet, Fokus kehrt zurück |
+| `ESC` | Feld verschwindet, Fokus kehrt zurück |
+| Klick woanders | Feld verschwindet automatisch |
+| `Enter` | Zeilenumbruch (kein Schließen) |
+
+Das Feld ist deaktiviert, solange `quick_input_hotkey` nicht gesetzt ist.
+
 ## Bedienung
 
 | Aktion | Standard-Hotkey |
@@ -193,6 +230,7 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
 | `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |
 | `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
+| `quick_input.rs` | Randloses Memo-Textfeld (Hotkey, Mehrzeilen, Größe konfigurierbar) |
 
 ## Tests
 
