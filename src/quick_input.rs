@@ -21,7 +21,7 @@ use wry::http::Request;
 use wry::raw_window_handle::{
     HasWindowHandle, HandleError, RawWindowHandle, Win32WindowHandle, WindowHandle,
 };
-use wry::{Rect, WebViewBuilder};
+use wry::{Rect, WebContext, WebViewBuilder};
 
 static PARENT_HWND_VAL: AtomicIsize = AtomicIsize::new(0);
 static PREV_FOREGROUND_VAL: AtomicIsize = AtomicIsize::new(0);
@@ -140,8 +140,17 @@ unsafe fn create_window(
     let font_px = if font_size > 0 { font_size * 96 / 72 } else { 14 };
     let html = HTML_TEMPLATE.replace("{FONT_SIZE}", &font_px.to_string());
 
+    // WebView2-Datenverzeichnis im Userprofil statt neben der EXE.
+    let data_dir = std::env::var("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("Waystone-Ridge")
+        .join("WebView2");
+    let _ = std::fs::create_dir_all(&data_dir);
+    let mut web_context = WebContext::new(Some(data_dir));
+
     let hwnd_val = hwnd.0 as isize;
-    let webview = WebViewBuilder::new()
+    let webview = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_html(html)
         .with_bounds(Rect {
             position: PhysicalPosition::new(0_i32, 0_i32).into(),

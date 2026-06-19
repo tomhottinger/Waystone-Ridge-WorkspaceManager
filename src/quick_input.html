@@ -11,6 +11,22 @@ body {
   font-size: {FONT_SIZE}px;
   color: #111; background: #fff;
 }
+
+#titlebar {
+  display: flex; justify-content: space-between; align-items: center;
+  height: 32px; padding: 0 14px; flex-shrink: 0;
+  background: #f3f3f3; border-bottom: 1px solid #e0e0e0;
+  user-select: none;
+}
+#titlebar .title-group { display: flex; align-items: center; }
+#titlebar .logo {
+  width: 18px; height: 18px; margin-right: 9px;
+  stroke: #0078d4; display: block;
+}
+#titlebar .title { font-size: 12px; font-weight: 400; color: #555; }
+#titlebar .title strong { font-weight: 600; color: #000; }
+#titlebar .credits { font-size: 10px; color: #777; letter-spacing: 0.3px; }
+
 #toolbar {
   display: flex; gap: 4px; padding: 5px 8px;
   background: #f4f4f4; border-bottom: 1px solid #d8d8d8;
@@ -63,6 +79,16 @@ body {
 </style>
 </head>
 <body>
+
+<div id="titlebar">
+  <div class="title-group">
+    <svg class="logo" viewBox="0 0 24 24" fill="none" stroke-width="2">
+      <path d="M3 20l5-9 4 6 5-12 4 15" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="title">Waystone <strong>Ridge</strong></span>
+  </div>
+  <span class="credits">by Thomas Hottinger &ndash; artScape cybernetics</span>
+</div>
 
 <div id="toolbar" onmousedown="event.preventDefault()">
   <button class="tb-btn" onclick="wrapA('**','**')" title="Fett (Ctrl+B)"><b>B</b></button>
