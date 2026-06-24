@@ -80,11 +80,9 @@ overlay_corner = "top_right"
 
 ## Respite – Zeitgesteuerte Pause
 
-Respite sperrt Maus und Tastatur vollständig für ein konfiguriertes Zeitfenster — ideal als erzwungene Bildschirmpause. Während einer aktiven Sperre erscheint ein großes, zentriertes Overlay mit dem Pausennamen und einem Countdown.
+Respite sperrt Maus und Tastatur vollständig für ein konfiguriertes Zeitfenster — ideal als erzwungene Bildschirmpause. Während einer aktiven Sperre erscheint ein großes Overlay, das alle Bildschirme abdeckt, mit dem Pausennamen und einem Countdown.
 
-**Notausgang:** `Ctrl+Alt+Shift+Delete` bricht die laufende Sperre sofort ab.
-
-Konfiguriert werden mehrere `[[respite]]`-Blöcke in `config.toml`:
+Konfiguriert werden `[[respite]]`-Blöcke in `config.toml`:
 
 ```toml
 [[respite]]
@@ -100,7 +98,30 @@ start = "15:30"
 end   = "15:45"
 ```
 
-Jeder Block definiert ein eigenständiges Zeitfenster; beliebig viele Blöcke sind möglich. Wird kein `[[respite]]`-Block angegeben, ist die Funktion deaktiviert.
+Beliebig viele Blöcke sind möglich. Wird kein `[[respite]]`-Block angegeben, ist Respite deaktiviert.
+
+**Breakout — vorzeitiger Abbruch in zwei Stufen:**
+
+1. **Mindestwartezeit**: Für die konfigurierte Dauer ist kein Abbruch möglich. Das Overlay zeigt einen Countdown („Breakout in MM:SS verfügbar").
+2. **Zeichensequenz**: Danach erscheint eine zufällige Sequenz aus Buchstaben und Ziffern, die vollständig abgetippt werden muss. Falsches Zeichen → von vorne.
+
+Der Abbruch gilt nur für das laufende Zeitfenster; beim nächsten Slot greift die Sperre wieder.
+
+Die Breakout-Parameter werden global unter `[respite_breakout]` konfiguriert und können pro Block überschrieben werden:
+
+```toml
+[respite_breakout]
+min_wait_secs = 360   # 6 Minuten Pflicht-Warten (Standard)
+escape_len    = 12    # Länge der Zeichensequenz (Standard)
+
+[[respite]]
+label         = "Kurze Pause"
+days          = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+start         = "15:30"
+end           = "15:45"
+min_wait_secs = 120   # dieser Block: nur 2 Minuten warten
+escape_len    = 6     # dieser Block: kürzere Sequenz
+```
 
 ---
 
@@ -110,12 +131,10 @@ Beim ersten Start wird `config.toml` **neben der EXE** erzeugt — vollständig 
 
 Das Tray-Icon enthält ein **Konfigurationsmenü** (Rechtsklick → Konfiguration):
 
-
-
-Konfigurationsfile öffnen -->  Öffnet `config.toml` im Standard-Texteditor 
-
-
-neu einlesen --> Lädt die Konfiguration sofort neu — kein Neustart nötig
+| Menüpunkt | Aktion |
+|-----------|--------|
+| Konfigurationsfile öffnen | Öffnet `config.toml` im Standard-Texteditor |
+| neu einlesen | Lädt die Konfiguration sofort neu — kein Neustart nötig |
 
 
 

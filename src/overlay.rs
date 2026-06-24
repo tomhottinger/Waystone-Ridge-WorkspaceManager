@@ -18,9 +18,10 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-    RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW, ShowWindow,
+    GetSystemMetrics, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW, ShowWindow,
     SystemParametersInfoW, GWLP_USERDATA, HMENU, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-    SHOW_WINDOW_CMD, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_ERASEBKGND,
+    SHOW_WINDOW_CMD, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_ERASEBKGND,
     WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -42,8 +43,7 @@ const SUBTLE_FONT_H: i32 = 24;
 
 // ── Prominentes Zentrum-Overlay (Respite-Meldungen) ───────────────────────────
 
-const PROM_W: i32 = 720;
-const PROM_H: i32 = 320;
+// PROM_W / PROM_H entfallen – das prominente Overlay spannt alle Monitore auf.
 /// BGR: helles, warmes Cremeweiß (R=250, G=250, B=245).
 const PROM_BG: u32 = 0x00_F5_FA_FA;
 /// Schrift: fast schwarz.
@@ -182,10 +182,12 @@ unsafe fn create_subtle_window(corner: &OverlayCorner, data_ptr: *const WindowDa
 }
 
 unsafe fn create_prominent_window(data_ptr: *const WindowData) -> Result<HWND> {
-    let work = work_area();
-    let x = work.left + (work.right - work.left - PROM_W) / 2;
-    let y = work.top + (work.bottom - work.top - PROM_H) / 2;
-    make_window(x, y, PROM_W, PROM_H, PROM_ALPHA, data_ptr)
+    // Alle Monitore abdecken: virtuellen Bildschirm abfragen.
+    let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    let w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    let h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    make_window(x, y, w, h, PROM_ALPHA, data_ptr)
 }
 
 fn subtle_corner_pos(corner: &OverlayCorner, work: &RECT) -> (i32, i32) {
@@ -257,6 +259,7 @@ unsafe fn paint_subtle(hdc: HDC, rc: &RECT, text_w: &[u16]) {
 }
 
 unsafe fn paint_prominent(hdc: HDC, rc: &RECT, text_w: &[u16]) {
+    // Hintergrund über alle Monitore füllen.
     let bg = CreateSolidBrush(COLORREF(PROM_BG));
     FillRect(hdc, rc, bg);
     let _ = DeleteObject(HGDIOBJ(bg.0));
@@ -270,18 +273,25 @@ unsafe fn paint_prominent(hdc: HDC, rc: &RECT, text_w: &[u16]) {
     SetBkMode(hdc, BACKGROUND_MODE(1));
     SetTextColor(hdc, COLORREF(PROM_FG));
 
-    // Mehrzeiligen Text zentriert zeichnen; DrawTextW behandelt \n als Zeilenumbruch.
-    const PAD: i32 = 24;
+    // Text auf dem Tray-Monitor zentrieren (primärer Monitor = work_area).
+    // Das Fenster liegt bei (SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN); work_area()
+    // liefert Bildschirmkoordinaten → in Clientkoordinaten umrechnen.
+    let vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    let vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    let wa = work_area();
+    const PAD: i32 = 40;
     let mut draw_rc = RECT {
-        left: rc.left + PAD,
-        top: rc.top + PAD,
-        right: rc.right - PAD,
-        bottom: rc.bottom - PAD,
+        left:   wa.left   - vx + PAD,
+        top:    wa.top    - vy + PAD,
+        right:  wa.right  - vx - PAD,
+        bottom: wa.bottom - vy - PAD,
     };
+
     // Erster Pass: Texthöhe berechnen.
     let mut calc_rc = draw_rc;
-    let mut text_w_copy = text_w.to_vec();
-    DrawTextW(hdc, &mut text_w_copy, &mut calc_rc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | windows::Win32::Graphics::Gdi::DT_CALCRECT);
+    let mut tmp = text_w.to_vec();
+    DrawTextW(hdc, &mut tmp, &mut calc_rc,
+        DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | windows::Win32::Graphics::Gdi::DT_CALCRECT);
     // Zweiter Pass: vertikal zentrieren und zeichnen.
     let text_h = calc_rc.bottom - calc_rc.top;
     let avail_h = draw_rc.bottom - draw_rc.top;

@@ -28,8 +28,10 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
 - **Konfigurationsmenü im Tray**: „Konfigurationsfile öffnen" startet den Standard-Texteditor;
   „neu einlesen" lädt `config.toml` sofort neu — kein Neustart nötig.
 - **Respite – Zeitgesteuerte Eingabesperre**: Sperrt Maus und Tastatur für konfigurierte
-  Zeitfenster (z. B. erzwungene Bildschirmpause). Prominentes zentriertes Overlay mit
-  Countdown. Notausgang via `Ctrl+Alt+Shift+Delete`. Beliebig viele `[[respite]]`-Blöcke.
+  Zeitfenster (z. B. erzwungene Bildschirmpause). Overlay deckt alle Monitore ab, Text
+  zentriert auf dem primären Monitor. Countdown bis Pause-Ende. Vorzeitiger Abbruch
+  (**Breakout**) nur nach konfigurierbarer Mindestwartezeit + korrekter Zeichensequenz.
+  Beliebig viele `[[respite]]`-Blöcke.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
 - Filtert ungeeignete Fenster (Tool-/Shell-/cloaked UWP-Fenster).
 - Optionale Konsolenausgabe (`--debug`), alternatives Config-File (`--config`) und
@@ -226,8 +228,9 @@ neu aufgebaut, Hotkeys neu registriert und aktive Respite-Sperren beendet.
 ### Respite – Zeitgesteuerte Eingabesperre
 
 `[[respite]]`-Blöcke definieren Zeitfenster, in denen Maus und Tastatur vollständig
-blockiert werden. Während der Sperre erscheint ein großes, zentriertes Overlay mit
-dem Pausennamen und einem Countdown bis zum Ende.
+blockiert werden. Während der Sperre erscheint ein Overlay, das alle Monitore abdeckt,
+mit dem Pausennamen und einem Countdown bis zum Ende. Text und Countdown werden auf
+dem Monitor zentriert, auf dem das Tray-Icon liegt.
 
 ```toml
 [[respite]]
@@ -249,14 +252,39 @@ end   = "15:45"
 | `days` | ja | Wochentage als Liste: `"Mon"`–`"Sun"` oder Deutsch `"Montag"`–`"Sonntag"` |
 | `start` | ja | Beginn der Sperre im Format `"HH:MM"` |
 | `end` | ja | Ende der Sperre im Format `"HH:MM"` (muss nach `start` liegen) |
+| `min_wait_secs` | nein | Überschreibt den globalen Breakout-Wert für diesen Block |
+| `escape_len` | nein | Überschreibt die globale Sequenzlänge für diesen Block |
 
-**Notausgang:** `Ctrl+Alt+Shift+Delete` bricht die aktive Sperre sofort ab und verhindert
-die Reaktivierung für den aktuellen Zeitslot. Beim nächsten Slot greift die Sperre wieder.
+**Breakout — vorzeitiger Abbruch in zwei Stufen:**
+
+1. **Mindestwartezeit**: Für die konfigurierte Dauer ist kein Abbruch möglich. Das Overlay zeigt einen Countdown („Breakout in MM:SS verfügbar").
+2. **Zeichensequenz**: Danach erscheint eine zufällige Sequenz aus Buchstaben und Ziffern (`a–z`, `0–9`), die vollständig abgetippt werden muss. Falsches Zeichen → von vorne.
+
+Der Abbruch gilt nur für das laufende Zeitfenster; beim nächsten Slot greift die Sperre wieder.
+
+Breakout-Defaults werden global unter `[respite_breakout]` festgelegt und können
+pro `[[respite]]`-Block mit `min_wait_secs` / `escape_len` überschrieben werden:
+
+```toml
+[respite_breakout]
+min_wait_secs = 360   # Sekunden warten bevor Breakout verfügbar (Standard: 360 = 6 Min)
+                      # 0 = sofort verfügbar
+escape_len    = 12    # Länge der abzutippenden Zeichensequenz (Standard: 12, Min: 1)
+
+# Beispiel mit per-Block-Override:
+[[respite]]
+label         = "Kurze Pause"
+days          = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+start         = "15:30"
+end           = "15:45"
+min_wait_secs = 120   # nur 2 Minuten warten statt globaler Default
+escape_len    = 6     # kürzere Sequenz für diesen Block
+```
 
 Technisch: `WH_KEYBOARD_LL` + `WH_MOUSE_LL` blockieren alle nicht-injizierten Eingaben.
-Der Modifier-Status wird manuell verfolgt (zuverlässiger als `GetAsyncKeyState` während
-der Blockierung). Ein `respite_escaped_this_slot`-Flag verhindert sofortige Reaktivierung
-durch den Sekunden-Timer.
+Getippte Zeichen werden während der Breakout-Phase per `PostMessageW` an die Message-Loop
+weitergeleitet und dort gegen die generierte Sequenz geprüft. Ein `respite_escaped_this_slot`-Flag
+verhindert sofortige Reaktivierung durch den Sekunden-Timer.
 
 ## Bedienung
 
