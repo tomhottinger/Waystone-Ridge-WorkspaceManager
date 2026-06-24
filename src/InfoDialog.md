@@ -133,8 +133,8 @@ Das Tray-Icon enthält ein **Konfigurationsmenü** (Rechtsklick → Konfiguratio
 
 | Menüpunkt | Aktion |
 |-----------|--------|
-| Konfigurationsfile öffnen | Öffnet `config.toml` im Standard-Texteditor |
-| neu einlesen | Lädt die Konfiguration sofort neu — kein Neustart nötig |
+| Konfiguration bearbeiten | Öffnet `config.toml` im Standard-Texteditor |
+| Konfiguration neu einlesen (reload) | Lädt die Konfiguration sofort neu — kein Neustart nötig |
 
 
 

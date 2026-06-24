@@ -699,8 +699,8 @@ fn build_tray(
 
     // Konfigurationsmenü als Submenu.
     let config_sub = Submenu::new("Konfiguration", true);
-    let open_cfg = MenuItem::new("Konfigurationsfile öffnen", true, None);
-    let reload_cfg = MenuItem::new("neu einlesen", true, None);
+    let open_cfg = MenuItem::new("Konfiguration bearbeiten", true, None);
+    let reload_cfg = MenuItem::new("Konfiguration neu einlesen (reload)", true, None);
     menu_actions.insert(open_cfg.id().0.clone(), MenuAction::OpenConfigFile);
     menu_actions.insert(reload_cfg.id().0.clone(), MenuAction::ReloadConfig);
     config_sub.append(&open_cfg)?;

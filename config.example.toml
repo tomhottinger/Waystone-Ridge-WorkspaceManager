@@ -8,8 +8,8 @@
 # Mit --config <Pfad> kann auch ein anderer Pfad angegeben werden.
 #
 # Tray-Icon → Konfiguration:
-#   "Konfigurationsfile öffnen"  – öffnet diese Datei im Standard-Texteditor
-#   "neu einlesen"               – lädt die Konfiguration sofort neu (kein Neustart)
+#   "Konfiguration bearbeiten"           – öffnet diese Datei im Standard-Texteditor
+#   "Konfiguration neu einlesen (reload)" – lädt die Konfiguration sofort neu (kein Neustart)
 
 
 # -----------------------------------------------------------------------------
@@ -88,8 +88,8 @@ move_window_follow = true
 # -----------------------------------------------------------------------------
 
 [respite_breakout]
-min_wait_secs = 60   # nur 10 Sekunden warten (zum Testen)
-escape_len    = 12    # kurze Sequenz (zum Testen)
+min_wait_secs = 360   # Sekunden warten bevor Breakout verfügbar (Standard: 360 = 6 Min)
+escape_len    = 12    # Länge der abzutippenden Zeichensequenz (Standard: 12)
 
 
 # Morgendliche Bildschirmpause – Mo bis Fr

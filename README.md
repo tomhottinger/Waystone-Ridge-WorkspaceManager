@@ -25,8 +25,8 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
   Inhalt bleibt erhalten. Toolbar, Tastaturkürzel, Maus- und Tastaturnavigation.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
-- **Konfigurationsmenü im Tray**: „Konfigurationsfile öffnen" startet den Standard-Texteditor;
-  „neu einlesen" lädt `config.toml` sofort neu — kein Neustart nötig.
+- **Konfigurationsmenü im Tray**: „Konfiguration bearbeiten" startet den Standard-Texteditor;
+  „Konfiguration neu einlesen (reload)" lädt `config.toml` sofort neu — kein Neustart nötig.
 - **Respite – Zeitgesteuerte Eingabesperre**: Sperrt Maus und Tastatur für konfigurierte
   Zeitfenster (z. B. erzwungene Bildschirmpause). Overlay deckt alle Monitore ab, Text
   zentriert auf dem primären Monitor. Countdown bis Pause-Ende. Vorzeitiger Abbruch
@@ -219,8 +219,8 @@ Das Tray-Icon enthält ein Untermenü **Konfiguration**:
 
 | Eintrag | Aktion |
 |---------|--------|
-| Konfigurationsfile öffnen | Öffnet `config.toml` im System-Standardeditor (`cmd /C start ""`) |
-| neu einlesen | Lädt `config.toml` sofort neu — kein Neustart nötig |
+| Konfiguration bearbeiten | Öffnet `config.toml` im System-Standardeditor (`cmd /C start ""`) |
+| Konfiguration neu einlesen (reload) | Lädt `config.toml` sofort neu — kein Neustart nötig |
 
 Beim Neu-Einlesen werden alle Fenster kurz wieder sichtbar gemacht, der WorkspaceManager
 neu aufgebaut, Hotkeys neu registriert und aktive Respite-Sperren beendet.
@@ -380,7 +380,7 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `windows.rs`    | Fenster enumerieren/filtern, anzeigen/verstecken, Titelsuche |
 | `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
 | `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |
-| `overlay.rs`    | Desktop-Overlay-Fenster (always-on-top, halbtransparent) |
+| `overlay.rs`    | Desktop-Overlay-Fenster: dezentes Eck-Overlay (Workspaces) + vollflächiges Multi-Monitor-Overlay (Respite) |
 | `quick_input.rs` | Markdown-Schnellnotiz: WYSIWYG-Block-Editor via WebView2 |
 | `quick_input.html` | HTML/JS für Editor (Markdown-Parser, Toolbar, Block-Editing) |
 | `info_dialog.rs` | Info-/Hilfe-Dialog via WebView2 |
