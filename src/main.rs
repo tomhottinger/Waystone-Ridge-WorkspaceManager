@@ -18,33 +18,40 @@ mod logging;
 mod monitors;
 mod overlay;
 mod quick_input;
+mod respite;
 mod windows;
 mod workspace;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use ::windows::core::w;
 use ::windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use ::windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use ::windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, TranslateMessage,
-    CW_USEDEFAULT, GWLP_USERDATA, HHOOK, HMENU, MSG, WINDOW_EX_STYLE, WM_DESTROY, WM_DISPLAYCHANGE,
-    WM_HOTKEY, WNDCLASSW, WS_OVERLAPPED,
+    GetWindowLongPtrW, KillTimer, PostQuitMessage, RegisterClassW, SetTimer, SetWindowLongPtrW,
+    TranslateMessage, CW_USEDEFAULT, GWLP_USERDATA, HHOOK, HMENU, MSG, WINDOW_EX_STYLE,
+    WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
 };
 
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 use hotkeys::Action;
 use workspace::WorkspaceManager;
+
+/// Timer-ID für die periodische Respite-Prüfung.
+const TIMER_RESPITE: usize = 1;
 
 /// Aktion eines Menüeintrags im Tray.
 #[derive(Debug, Clone)]
 enum MenuAction {
     Activate(u32),
     ShowInfo,
+    OpenConfigFile,
+    ReloadConfig,
     Quit,
 }
 
@@ -64,16 +71,28 @@ struct AppState {
     tray: TrayIcon,
     /// Eigenes (verstecktes) Fenster für Hotkey- und Display-Nachrichten.
     hwnd: HWND,
-    /// Optionaler Low-Level-Keyboard-Hook (Fallback für reservierte Hotkeys).
+    /// Low-Level-Keyboard-Hook für Hotkey-Fallback (reservierte Tasten).
     keyboard_hook: Option<HHOOK>,
+    /// Keyboard-Hook, der ausschließlich für die Respite-Blockierung installiert wurde.
+    respite_keyboard_hook: Option<HHOOK>,
+    /// Maus-Hook für die Respite-Blockierung.
+    mouse_hook: Option<HHOOK>,
     /// Zuletzt bekannte Monitor-IDs (für Änderungserkennung).
     last_monitor_ids: Vec<String>,
-    /// Optionales Desktop-Overlay (nur wenn show_overlay = true in config.toml).
+    /// Optionales Desktop-Overlay (show_overlay = true in config.toml).
     overlay: Option<overlay::Overlay>,
+    /// Temporäres Overlay während einer aktiven Respite (nur wenn kein reguläres Overlay).
+    respite_overlay: Option<overlay::Overlay>,
     /// Optionales randloses Schnelleingabe-Fenster.
     quick_input: Option<quick_input::QuickInput>,
     /// Info-Dialog (WebView2, immer erstellt).
     info_dialog: Option<info_dialog::InfoDialog>,
+    /// Geparste Respite-Zeitpläne.
+    respite_schedules: Vec<respite::RespiteSchedule>,
+    /// Ob gerade ein Respite-Zeitfenster aktiv ist.
+    respite_active: bool,
+    /// Pfad zur geladenen Konfigurationsdatei.
+    config_file_path: PathBuf,
 }
 
 impl AppState {
@@ -85,17 +104,16 @@ impl AppState {
         let tooltip = format!("Workspace Manager – aktiv: {} ({})", current, name);
         let _ = self.tray.set_tooltip(Some(tooltip));
 
-        // Tray-Icon mit aktueller Workspace-Nummer neu zeichnen.
         let _ = self.tray.set_icon(Some(make_numbered_icon(current)));
 
-        // Nur der aktive Workspace erhält ein Häkchen.
         for (id, item) in &self.ws_check_items {
             item.set_checked(*id == current);
         }
 
-        // Overlay aktualisieren, falls aktiv.
-        if let Some(ref ov) = self.overlay {
-            ov.update(&name);
+        if !self.respite_active {
+            if let Some(ref ov) = self.overlay {
+                ov.update(&name);
+            }
         }
     }
 }
@@ -107,41 +125,35 @@ fn main() {
     }
 }
 
-/// Eigentlicher Programmablauf. Fehler werden von `main` per MessageBox angezeigt,
-/// da im Normalbetrieb keine Konsole existiert.
 fn run() -> Result<()> {
-    // 0. Kommandozeile parsen und Logging einrichten (Konsole nur bei --debug,
-    //    Logdatei nur bei --log).
     let cli = cli::Cli::parse()?;
     logging::init(cli.debug, cli.log.as_deref())?;
 
     tracing::info!("Workspace Manager startet");
 
-    // 1.–3. Konfiguration laden und validieren.
-    let cfg = config::load_or_create(cli.config.as_deref())?;
+    let config_file_path = match cli.config.as_deref() {
+        Some(p) => p.to_path_buf(),
+        None => config::config_path()?,
+    };
 
-    // 4. WorkspaceManager erzeugen.
+    let cfg = config::load_or_create(Some(&config_file_path))?;
+
     let mut manager = WorkspaceManager::new(&cfg);
     let start_ws = manager.current;
-
-    // 5. Aktuelle Fenster dem Start-Workspace zuordnen und Sichtbarkeit setzen.
     manager.assign_all_visible(start_ws);
     manager.apply_visibility();
 
-    // Verstecktes Fenster für Nachrichten erzeugen.
     let hwnd = create_message_window().context("Nachrichtenfenster erzeugen")?;
 
-    // Hotkeys registrieren (6.). Reservierte Kombis landen im Keyboard-Hook.
     let (actions, hotkey_ids) = register_hotkeys(hwnd, &cfg);
 
-    // Keyboard-Hook nur installieren, wenn mindestens ein Hotkey ihn benötigt.
     hook::set_hwnd(hwnd);
     let keyboard_hook = if hook::is_empty() {
         None
     } else {
         match hook::install() {
             Ok(h) => {
-                tracing::info!("Low-Level-Keyboard-Hook installiert (für reservierte Hotkeys)");
+                tracing::info!("Low-Level-Keyboard-Hook installiert");
                 Some(h)
             }
             Err(e) => {
@@ -151,13 +163,11 @@ fn run() -> Result<()> {
         }
     };
 
-    // Tray-Icon mit Menü aufbauen.
     let (tray, menu_actions, ws_check_items) =
         build_tray(&cfg, manager.current).context("Tray-Icon erzeugen")?;
 
     let last_monitor_ids = monitors::current_ids();
 
-    // Desktop-Overlay erzeugen, wenn in der Konfiguration aktiviert.
     let overlay = if cfg.show_overlay {
         let name = manager.name_of(manager.current);
         match overlay::Overlay::create(&cfg.overlay_corner, &name) {
@@ -174,9 +184,12 @@ fn run() -> Result<()> {
         None
     };
 
-    // Schnelleingabe-Fenster erzeugen, wenn ein Hotkey konfiguriert ist.
     let quick_input = if cfg.quick_input_hotkey.is_some() {
-        match quick_input::QuickInput::create(cfg.quick_input_width_pct, cfg.quick_input_height_pct, cfg.quick_input_font_size) {
+        match quick_input::QuickInput::create(
+            cfg.quick_input_width_pct,
+            cfg.quick_input_height_pct,
+            cfg.quick_input_font_size,
+        ) {
             Ok(qi) => {
                 tracing::info!("Quick-Input-Fenster erstellt");
                 Some(qi)
@@ -190,7 +203,6 @@ fn run() -> Result<()> {
         None
     };
 
-    // Info-Dialog erstellen (immer, unabhängig von Config).
     let info_dialog = match info_dialog::InfoDialog::create() {
         Ok(d) => {
             tracing::info!("Info-Dialog erstellt");
@@ -202,7 +214,8 @@ fn run() -> Result<()> {
         }
     };
 
-    // Zustand boxen und Zeiger im Fenster hinterlegen.
+    let respite_schedules = respite::parse(&cfg.respite);
+
     let state = Box::new(AppState {
         manager,
         actions,
@@ -212,23 +225,29 @@ fn run() -> Result<()> {
         tray,
         hwnd,
         keyboard_hook,
+        respite_keyboard_hook: None,
+        mouse_hook: None,
         last_monitor_ids,
         overlay,
+        respite_overlay: None,
         quick_input,
         info_dialog,
+        respite_schedules,
+        respite_active: false,
+        config_file_path,
     });
     let state_ptr = Box::into_raw(state);
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
         (*state_ptr).refresh_tray();
+        // Respite alle 10 Sekunden prüfen.
+        SetTimer(hwnd, TIMER_RESPITE, 10_000, None);
     }
 
     tracing::info!("Bereit. Hotkeys aktiv, Tray-Icon angelegt.");
 
-    // 7. Nachrichtenschleife.
     run_message_loop(state_ptr);
 
-    // Aufräumen: Zustand zurücknehmen, Fenster zerstören.
     let mut state = unsafe { Box::from_raw(state_ptr) };
     cleanup(&mut state);
     unsafe {
@@ -239,9 +258,6 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// Zeigt einen fatalen Startfehler in einer MessageBox an (es gibt im
-/// Normalbetrieb keine Konsole) und protokolliert ihn zusätzlich, falls bereits
-/// ein Logger aktiv ist.
 fn report_fatal_error(err: &anyhow::Error) {
     use ::windows::core::PCWSTR;
     use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
@@ -263,6 +279,182 @@ fn report_fatal_error(err: &anyhow::Error) {
             PCWSTR(caption.as_ptr()),
             MB_OK | MB_ICONERROR,
         );
+    }
+}
+
+fn show_warning(caption: &str, text: &str) {
+    use ::windows::core::PCWSTR;
+    use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+
+    let text_w: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let cap_w: Vec<u16> = caption.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        MessageBoxW(
+            HWND::default(),
+            PCWSTR(text_w.as_ptr()),
+            PCWSTR(cap_w.as_ptr()),
+            MB_OK | MB_ICONWARNING,
+        );
+    }
+}
+
+/// Öffnet die Konfigurationsdatei im Standard-Texteditor des Betriebssystems.
+fn open_config_file(path: &std::path::Path) {
+    use std::os::windows::process::CommandExt;
+    let path_str = path.to_string_lossy();
+    let mut command = std::process::Command::new("cmd");
+    command.raw_arg(format!("/C start \"\" \"{}\"", path_str));
+    if let Err(e) = command.spawn() {
+        tracing::warn!("Konfigurationsfile öffnen fehlgeschlagen: {}", e);
+    }
+}
+
+/// Lädt die Konfiguration neu und baut den gesamten App-State neu auf.
+/// Fenster-Workspace-Zuordnungen gehen dabei verloren (alle Fenster landen
+/// wieder auf dem ersten Workspace).
+fn reload_config(state: &mut AppState) {
+    tracing::info!("Konfiguration wird neu geladen: {}", state.config_file_path.display());
+
+    let cfg = match config::load_or_create(Some(&state.config_file_path)) {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("Konfiguration konnte nicht geladen werden:\n\n{e:#}");
+            tracing::warn!("{}", msg);
+            show_warning("Workspace Manager – Fehler", &msg);
+            return;
+        }
+    };
+
+    // Alle Fenster wieder sichtbar machen, bevor der Zustand ersetzt wird.
+    state.manager.show_all();
+
+    // Respite deaktivieren.
+    hook::set_respite_active(false);
+    state.respite_active = false;
+    state.respite_overlay = None;
+    if let Some(h) = state.respite_keyboard_hook.take() {
+        hook::uninstall(h);
+    }
+    if let Some(h) = state.mouse_hook.take() {
+        hook::uninstall_mouse(h);
+    }
+
+    // Keyboard-Hook und Hotkeys deregistrieren.
+    if let Some(h) = state.keyboard_hook.take() {
+        hook::uninstall(h);
+    }
+    hook::clear_entries();
+    for id in &state.hotkey_ids {
+        hotkeys::unregister(state.hwnd, *id);
+    }
+
+    // Neuen WorkspaceManager erzeugen.
+    let mut manager = WorkspaceManager::new(&cfg);
+    let start_ws = manager.current;
+    manager.assign_all_visible(start_ws);
+    manager.apply_visibility();
+    state.manager = manager;
+
+    // Hotkeys neu registrieren.
+    let (actions, hotkey_ids) = register_hotkeys(state.hwnd, &cfg);
+    state.actions = actions;
+    state.hotkey_ids = hotkey_ids;
+
+    // Keyboard-Hook ggf. neu installieren.
+    hook::set_hwnd(state.hwnd);
+    state.keyboard_hook = if hook::is_empty() {
+        None
+    } else {
+        match hook::install() {
+            Ok(h) => Some(h),
+            Err(e) => {
+                tracing::warn!("Keyboard-Hook konnte nicht installiert werden: {}", e);
+                None
+            }
+        }
+    };
+
+    // Tray-Menü neu aufbauen.
+    match build_tray(&cfg, state.manager.current) {
+        Ok((tray, menu_actions, ws_check_items)) => {
+            state.tray = tray;
+            state.menu_actions = menu_actions;
+            state.ws_check_items = ws_check_items;
+        }
+        Err(e) => tracing::warn!("Tray-Menü konnte nicht neu aufgebaut werden: {}", e),
+    }
+
+    // Overlay aktualisieren.
+    state.overlay = if cfg.show_overlay {
+        let name = state.manager.name_of(state.manager.current);
+        overlay::Overlay::create(&cfg.overlay_corner, &name).ok()
+    } else {
+        None
+    };
+
+    // Respite-Zeitpläne neu laden.
+    state.respite_schedules = respite::parse(&cfg.respite);
+
+    state.refresh_tray();
+    tracing::info!("Konfiguration erfolgreich neu geladen");
+}
+
+/// Prüft, ob ein Respite-Zeitfenster beginnt oder endet, und reagiert entsprechend.
+fn check_respite(state: &mut AppState) {
+    let slot = respite::active_slot(&state.respite_schedules);
+    let should_be_active = slot.is_some();
+
+    if should_be_active == state.respite_active {
+        return;
+    }
+
+    state.respite_active = should_be_active;
+    hook::set_respite_active(should_be_active);
+
+    if should_be_active {
+        let slot = slot.unwrap();
+        let msg = format!("{} – bis {}", slot.label, respite::format_end(slot));
+        tracing::info!("Respite beginnt: {}", msg);
+
+        // Keyboard-Hook installieren, falls noch keiner läuft.
+        if state.keyboard_hook.is_none() && state.respite_keyboard_hook.is_none() {
+            match hook::install() {
+                Ok(h) => state.respite_keyboard_hook = Some(h),
+                Err(e) => tracing::warn!("Respite-Keyboard-Hook nicht installierbar: {}", e),
+            }
+        }
+
+        // Maus-Hook installieren.
+        match hook::install_mouse() {
+            Ok(h) => state.mouse_hook = Some(h),
+            Err(e) => tracing::warn!("Respite-Maus-Hook nicht installierbar: {}", e),
+        }
+
+        // Overlay mit Respite-Meldung aktualisieren oder temporäres anlegen.
+        if let Some(ref ov) = state.overlay {
+            ov.update(&msg);
+        } else {
+            match overlay::Overlay::create(&config::OverlayCorner::default(), &msg) {
+                Ok(ov) => state.respite_overlay = Some(ov),
+                Err(e) => tracing::warn!("Respite-Overlay konnte nicht erstellt werden: {}", e),
+            }
+        }
+    } else {
+        tracing::info!("Respite endet");
+
+        // Respite-spezifische Hooks entfernen.
+        if let Some(h) = state.respite_keyboard_hook.take() {
+            hook::uninstall(h);
+        }
+        if let Some(h) = state.mouse_hook.take() {
+            hook::uninstall_mouse(h);
+        }
+
+        // Temporäres Overlay entfernen; normales Overlay zurücksetzen.
+        state.respite_overlay = None;
+        if let Some(ref ov) = state.overlay {
+            ov.update(&state.manager.name_of(state.manager.current));
+        }
     }
 }
 
@@ -333,7 +525,6 @@ fn register_one(
             tracing::info!("Hotkey '{}' via RegisterHotKey registriert (id {})", spec, id);
         }
         Err(e) => {
-            // Reserviert (z. B. Win+N) -> Fallback auf den Low-Level-Keyboard-Hook.
             hook::add_entry(parsed.mod_bits(), parsed.vk, id);
             actions.insert(id, action);
             tracing::info!(
@@ -346,8 +537,8 @@ fn register_one(
     }
 }
 
-/// Baut das Tray-Icon mit Menü auf und liefert die Zuordnung Menü-ID → Aktion
-/// sowie die Häkchen-Einträge je Workspace-ID. `current` erhält das Häkchen.
+/// Baut das Tray-Icon mit Menü auf. Gibt Tray-Icon, Menü-Aktions-Map und
+/// Workspace-Häkchen-Map zurück.
 fn build_tray(
     cfg: &config::Config,
     current: u32,
@@ -381,6 +572,18 @@ fn build_tray(
     }
 
     menu.append(&PredefinedMenuItem::separator())?;
+
+    // Konfigurationsmenü als Submenu.
+    let config_sub = Submenu::new("Konfiguration", true);
+    let open_cfg = MenuItem::new("Konfigurationsfile öffnen", true, None);
+    let reload_cfg = MenuItem::new("neu einlesen", true, None);
+    menu_actions.insert(open_cfg.id().0.clone(), MenuAction::OpenConfigFile);
+    menu_actions.insert(reload_cfg.id().0.clone(), MenuAction::ReloadConfig);
+    config_sub.append(&open_cfg)?;
+    config_sub.append(&reload_cfg)?;
+    menu.append(&config_sub)?;
+
+    menu.append(&PredefinedMenuItem::separator())?;
     let quit = MenuItem::new("Beenden", true, None);
     menu_actions.insert(quit.id().0.clone(), MenuAction::Quit);
     menu.append(&quit)?;
@@ -395,7 +598,7 @@ fn build_tray(
     Ok((tray, menu_actions, ws_check_items))
 }
 
-/// 3×5 Pixelfont für die Ziffern 0–9. Bit 2 = linke Spalte, Bit 0 = rechte Spalte.
+/// 3×5 Pixelfont für die Ziffern 0–9.
 static DIGITS: [[u8; 5]; 10] = [
     [0b111, 0b101, 0b101, 0b101, 0b111], // 0
     [0b110, 0b010, 0b010, 0b010, 0b111], // 1
@@ -409,7 +612,6 @@ static DIGITS: [[u8; 5]; 10] = [
     [0b111, 0b101, 0b111, 0b001, 0b111], // 9
 ];
 
-/// Erzeugt ein 32×32 Tray-Icon mit der Workspace-Nummer als Pixel-Text.
 fn make_numbered_icon(ws_id: u32) -> Icon {
     const SIZE: u32 = 32;
     let text = format!("{}", ws_id);
@@ -425,7 +627,6 @@ fn make_numbered_icon(ws_id: u32) -> Icon {
 
     let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
 
-    // Hintergrund: blau.
     for chunk in rgba.chunks_mut(4) {
         chunk[0] = 0x2D;
         chunk[1] = 0x7D;
@@ -433,7 +634,6 @@ fn make_numbered_icon(ws_id: u32) -> Icon {
         chunk[3] = 0xFF;
     }
 
-    // Rand: dunkelgrau.
     for y in 0..SIZE {
         for x in 0..SIZE {
             if x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2 {
@@ -446,7 +646,6 @@ fn make_numbered_icon(ws_id: u32) -> Icon {
         }
     }
 
-    // Ziffern rendern.
     for (ci, ch) in text.chars().enumerate() {
         let d = (ch as u8 - b'0') as usize;
         let cx = start_x + ci as u32 * (digit_w + gap);
@@ -474,9 +673,6 @@ fn make_numbered_icon(ws_id: u32) -> Icon {
     Icon::from_rgba(rgba, SIZE, SIZE).expect("gültiges Icon")
 }
 
-/// Erzeugt ein verstecktes Top-Level-Fenster, das `WM_HOTKEY` und
-/// `WM_DISPLAYCHANGE` empfängt. (Message-only-Fenster erhalten kein
-/// `WM_DISPLAYCHANGE`, daher ein normales, nie angezeigtes Fenster.)
 fn create_message_window() -> Result<HWND> {
     unsafe {
         let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
@@ -513,13 +709,10 @@ fn create_message_window() -> Result<HWND> {
     }
 }
 
-/// Standard-Nachrichtenschleife. Verarbeitet Fensternachrichten und pollt
-/// danach die Menü-Ereignisse des Tray-Icons.
 fn run_message_loop(state_ptr: *mut AppState) {
     let mut msg = MSG::default();
     loop {
         let ret = unsafe { GetMessageW(&mut msg, None, 0, 0) };
-        // 0 = WM_QUIT, -1 = Fehler.
         if ret.0 <= 0 {
             break;
         }
@@ -528,7 +721,7 @@ fn run_message_loop(state_ptr: *mut AppState) {
             DispatchMessageW(&msg);
         }
 
-        // Menü-Ereignisse des Tray-Icons abholen.
+        // Tray-Menü-Ereignisse abholen.
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             let state = unsafe { &mut *state_ptr };
             match state.menu_actions.get(&event.id.0).cloned() {
@@ -541,6 +734,12 @@ fn run_message_loop(state_ptr: *mut AppState) {
                         d.show();
                     }
                 }
+                Some(MenuAction::OpenConfigFile) => {
+                    open_config_file(&state.config_file_path.clone());
+                }
+                Some(MenuAction::ReloadConfig) => {
+                    reload_config(state);
+                }
                 Some(MenuAction::Quit) => {
                     tracing::info!("Beenden über Tray-Menü angefordert");
                     return;
@@ -551,7 +750,6 @@ fn run_message_loop(state_ptr: *mut AppState) {
     }
 }
 
-/// Führt die zu einer Hotkey-ID gehörende Aktion aus und aktualisiert den Tooltip.
 fn dispatch_hotkey(state: &mut AppState, id: i32) {
     if let Some(action) = state.actions.get(&id).cloned() {
         match action {
@@ -566,11 +764,11 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
             Action::Summon { title, launch, launch_dir } => {
                 if let Some(hwnd) = windows::find_by_title_substr(&title) {
                     let key = windows::hwnd_key(hwnd);
-                    let on_current = state.manager.window_ws.get(&key) == Some(&state.manager.current);
+                    let on_current =
+                        state.manager.window_ws.get(&key) == Some(&state.manager.current);
                     let is_foreground = hwnd == windows::foreground_window();
                     if on_current && is_foreground {
                         windows::minimize(hwnd);
-                        tracing::debug!("Summon: Fenster '{}' minimiert (war aktiv auf aktuellem Workspace)", title);
                     } else {
                         state.manager.pull_to_current(hwnd);
                     }
@@ -585,8 +783,6 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
                     if let Err(e) = command.spawn() {
                         tracing::warn!("Summon: Starten von '{}' fehlgeschlagen: {}", cmd, e);
                     }
-                } else {
-                    tracing::debug!("Summon: kein Fenster mit Titel-Substring '{}' gefunden", title);
                 }
             }
             Action::ToggleQuickInput => {
@@ -598,7 +794,6 @@ fn dispatch_hotkey(state: &mut AppState, id: i32) {
     }
 }
 
-/// Fensterprozedur: behandelt Hotkeys und Monitoränderungen.
 unsafe extern "system" fn wndproc(
     hwnd: HWND,
     msg: u32,
@@ -606,11 +801,44 @@ unsafe extern "system" fn wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
-        // Reguläre RegisterHotKey-Hotkeys und Hook-Fallback teilen sich den Dispatch.
         WM_HOTKEY | hook::WM_APP_HOOK_HOTKEY => {
             let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
             if !state_ptr.is_null() {
                 dispatch_hotkey(&mut *state_ptr, wparam.0 as i32);
+            }
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            if wparam.0 == TIMER_RESPITE {
+                let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+                if !state_ptr.is_null() {
+                    check_respite(&mut *state_ptr);
+                }
+            }
+            LRESULT(0)
+        }
+        hook::WM_APP_RESPITE_ESCAPE => {
+            let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+            if !state_ptr.is_null() {
+                let state = &mut *state_ptr;
+                tracing::info!("Respite-Notausgang (Ctrl+Alt+Shift+Escape) betätigt");
+                // Respite sofort beenden, auch wenn das Zeitfenster noch aktiv wäre.
+                // check_respite wird beim nächsten Timer-Tick wieder prüfen.
+                if state.respite_active {
+                    state.respite_active = false; // kurz auf false setzen
+                    hook::set_respite_active(false);
+                    // Hooks deinstallieren
+                    if let Some(h) = state.respite_keyboard_hook.take() {
+                        hook::uninstall(h);
+                    }
+                    if let Some(h) = state.mouse_hook.take() {
+                        hook::uninstall_mouse(h);
+                    }
+                    state.respite_overlay = None;
+                    if let Some(ref ov) = state.overlay {
+                        ov.update(&state.manager.name_of(state.manager.current));
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -629,23 +857,16 @@ unsafe extern "system" fn wndproc(
     }
 }
 
-/// Reagiert auf Monitoränderungen: neu enumerieren, Differenz protokollieren,
-/// Zuordnungen bleiben über stabile IDs erhalten, Sichtbarkeit neu anwenden.
 fn handle_display_change(state: &mut AppState) {
     let new_ids = monitors::current_ids();
     if new_ids == state.last_monitor_ids {
         return;
     }
 
-    let added: Vec<&String> = new_ids
-        .iter()
-        .filter(|id| !state.last_monitor_ids.contains(id))
-        .collect();
-    let removed: Vec<&String> = state
-        .last_monitor_ids
-        .iter()
-        .filter(|id| !new_ids.contains(id))
-        .collect();
+    let added: Vec<&String> =
+        new_ids.iter().filter(|id| !state.last_monitor_ids.contains(id)).collect();
+    let removed: Vec<&String> =
+        state.last_monitor_ids.iter().filter(|id| !new_ids.contains(id)).collect();
 
     if !added.is_empty() {
         tracing::info!("Monitor(e) hinzugekommen: {:?}", added);
@@ -656,15 +877,22 @@ fn handle_display_change(state: &mut AppState) {
 
     state.manager.refresh_monitors();
     state.last_monitor_ids = new_ids;
-
-    // Fensterzuordnungen bleiben bestehen; aktiven Workspace sicher anzeigen.
     state.manager.apply_visibility();
 }
 
-/// Beendet sauber: Hotkeys deregistrieren und alle Fenster wieder sichtbar machen.
 fn cleanup(state: &mut AppState) {
+    unsafe {
+        let _ = KillTimer(state.hwnd, TIMER_RESPITE);
+    }
+    hook::set_respite_active(false);
     if let Some(hook) = state.keyboard_hook.take() {
         hook::uninstall(hook);
+    }
+    if let Some(hook) = state.respite_keyboard_hook.take() {
+        hook::uninstall(hook);
+    }
+    if let Some(hook) = state.mouse_hook.take() {
+        hook::uninstall_mouse(hook);
     }
     for id in &state.hotkey_ids {
         hotkeys::unregister(state.hwnd, *id);

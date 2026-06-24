@@ -65,6 +65,21 @@ fn default_quick_input_font_size() -> u32 {
     0
 }
 
+/// Konfiguration eines einzelnen Respite-Zeitfensters.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RespiteConfig {
+    /// Anzeigename im Overlay (Standard: "Pause").
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Wochentage: "Mon"–"Sun" oder Deutsch "Montag"–"Sonntag", Kürzel "Mo"–"So".
+    #[serde(default)]
+    pub days: Vec<String>,
+    /// Beginn der Sperre im Format "HH:MM".
+    pub start: String,
+    /// Ende der Sperre im Format "HH:MM".
+    pub end: String,
+}
+
 /// Gesamte Konfiguration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -94,6 +109,9 @@ pub struct Config {
     /// Schriftgröße des Schnelleingabe-Felds in Punkt (Standard: 0 = Windows-Standardschrift).
     #[serde(default = "default_quick_input_font_size")]
     pub quick_input_font_size: u32,
+    /// Zeitgesteuerte Eingabesperren.
+    #[serde(default)]
+    pub respite: Vec<RespiteConfig>,
 }
 
 /// Pfad zur `config.toml` neben der ausführbaren Datei.

@@ -48,6 +48,55 @@ move_window_follow = true
 
 
 # -----------------------------------------------------------------------------
+# Respite – Zeitgesteuerte Eingabesperre
+# Definiert Zeitfenster, in denen Maus und Tastatur vollständig gesperrt sind.
+# Kein Eintrag = Respite deaktiviert.
+#
+# Felder:
+#   label – Anzeigename im Overlay während der Sperre (Standard: "Pause")
+#   days  – Wochentage (Mehrfachauswahl möglich):
+#             Englisch: "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
+#             Deutsch:  "Montag" … "Sonntag" oder Kürzel "Mo" … "So"
+#   start – Beginn der Sperre im Format "HH:MM"
+#   end   – Ende der Sperre im Format "HH:MM"
+#
+# Mehrere Pausen: einfach mehrere [[respite]]-Blöcke untereinander schreiben.
+# Jeder Block definiert ein eigenständiges Zeitfenster; sie können sich nicht
+# überschneiden, können aber unterschiedliche Tage und Zeiten haben.
+#
+# Notausgang: Ctrl+Alt+Shift+Escape bricht die aktive Sperre sofort ab.
+# -----------------------------------------------------------------------------
+
+# Morgendliche Bildschirmpause – Mo bis Fr, 5 Minuten nach dem Start
+# [[respite]]
+# label = "Morgenrunde"
+# days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+# start = "09:00"
+# end   = "09:05"
+
+# Mittagspause – Mo bis Fr
+# [[respite]]
+# label = "Mittagspause"
+# days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+# start = "12:00"
+# end   = "12:15"
+
+# Nachmittagspause – Mo bis Do (Freitag kürzer)
+# [[respite]]
+# label = "Nachmittagspause"
+# days  = ["Mon", "Tue", "Wed", "Thu"]
+# start = "15:30"
+# end   = "15:45"
+
+# Freitags-Ausklang – nur Freitags, etwas früher
+# [[respite]]
+# label = "Freitags-Pause"
+# days  = ["Fri"]
+# start = "15:00"
+# end   = "15:10"
+
+
+# -----------------------------------------------------------------------------
 # Summon-Hotkeys
 # Ein Fenster per Fenstertitel auf den aktuellen Workspace holen.
 # Beliebig viele [[summons]]-Blöcke möglich (oder keiner).
