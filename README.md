@@ -25,6 +25,11 @@ Beim Beenden werden alle versteckten Fenster wieder sichtbar gemacht.
   Inhalt bleibt erhalten. Toolbar, Tastaturkürzel, Maus- und Tastaturnavigation.
 - Erkennung von Monitoränderungen (`WM_DISPLAYCHANGE`) über **stabile Geräte-IDs**
   (Docking-Szenarien); Zuordnungen bleiben erhalten.
+- **Konfigurationsmenü im Tray**: „Konfigurationsfile öffnen" startet den Standard-Texteditor;
+  „neu einlesen" lädt `config.toml` sofort neu — kein Neustart nötig.
+- **Respite – Zeitgesteuerte Eingabesperre**: Sperrt Maus und Tastatur für konfigurierte
+  Zeitfenster (z. B. erzwungene Bildschirmpause). Prominentes zentriertes Overlay mit
+  Countdown. Notausgang via `Ctrl+Alt+Shift+Delete`. Beliebig viele `[[respite]]`-Blöcke.
 - Tray-Icon-Menü: Workspace wählen, Beenden; der aktive Workspace trägt ein Häkchen.
 - Filtert ungeeignete Fenster (Tool-/Shell-/cloaked UWP-Fenster).
 - Optionale Konsolenausgabe (`--debug`), alternatives Config-File (`--config`) und
@@ -206,6 +211,53 @@ Tabellen, horizontale Linien, Links.
 Das Fenster ist deaktiviert, solange `quick_input_hotkey` nicht gesetzt ist.
 Voraussetzung: Microsoft Edge / WebView2-Runtime (auf Windows 10/11 vorinstalliert).
 
+### Konfigurationsmenü / Hot-Reload
+
+Das Tray-Icon enthält ein Untermenü **Konfiguration**:
+
+| Eintrag | Aktion |
+|---------|--------|
+| Konfigurationsfile öffnen | Öffnet `config.toml` im System-Standardeditor (`cmd /C start ""`) |
+| neu einlesen | Lädt `config.toml` sofort neu — kein Neustart nötig |
+
+Beim Neu-Einlesen werden alle Fenster kurz wieder sichtbar gemacht, der WorkspaceManager
+neu aufgebaut, Hotkeys neu registriert und aktive Respite-Sperren beendet.
+
+### Respite – Zeitgesteuerte Eingabesperre
+
+`[[respite]]`-Blöcke definieren Zeitfenster, in denen Maus und Tastatur vollständig
+blockiert werden. Während der Sperre erscheint ein großes, zentriertes Overlay mit
+dem Pausennamen und einem Countdown bis zum Ende.
+
+```toml
+[[respite]]
+label = "Mittagspause"
+days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+start = "12:00"
+end   = "12:15"
+
+[[respite]]
+label = "Nachmittagspause"
+days  = ["Mon", "Tue", "Wed", "Thu"]
+start = "15:30"
+end   = "15:45"
+```
+
+| Feld | Pflicht | Beschreibung |
+|------|---------|--------------|
+| `label` | nein | Anzeigename im Overlay (Standard: „Pause") |
+| `days` | ja | Wochentage als Liste: `"Mon"`–`"Sun"` oder Deutsch `"Montag"`–`"Sonntag"` |
+| `start` | ja | Beginn der Sperre im Format `"HH:MM"` |
+| `end` | ja | Ende der Sperre im Format `"HH:MM"` (muss nach `start` liegen) |
+
+**Notausgang:** `Ctrl+Alt+Shift+Delete` bricht die aktive Sperre sofort ab und verhindert
+die Reaktivierung für den aktuellen Zeitslot. Beim nächsten Slot greift die Sperre wieder.
+
+Technisch: `WH_KEYBOARD_LL` + `WH_MOUSE_LL` blockieren alle nicht-injizierten Eingaben.
+Der Modifier-Status wird manuell verfolgt (zuverlässiger als `GetAsyncKeyState` während
+der Blockierung). Ein `respite_escaped_this_slot`-Flag verhindert sofortige Reaktivierung
+durch den Sekunden-Timer.
+
 ## Bedienung
 
 | Aktion | Standard-Hotkey |
@@ -295,7 +347,8 @@ Standard: keine Ausgabe. Mit `--debug` → Konsole, mit `--log <pfad>` → Datei
 | `logging.rs`    | Tracing-Init: Konsole und begrenztes Logfile |
 | `config.rs`     | `config.toml` laden/erzeugen/validieren |
 | `hotkeys.rs`    | Hotkey-Strings parsen, globale Hotkeys registrieren |
-| `hook.rs`       | Low-Level-Keyboard-Hook für reservierte Hotkeys |
+| `hook.rs`       | Low-Level-Keyboard-/Maus-Hook: Hotkey-Fallback + Respite-Blockierung |
+| `respite.rs`    | Respite-Zeitpläne parsen, aktiven Slot bestimmen, Countdown formatieren |
 | `windows.rs`    | Fenster enumerieren/filtern, anzeigen/verstecken, Titelsuche |
 | `monitors.rs`   | Monitore enumerieren, stabile IDs, Änderungserkennung |
 | `workspace.rs`  | `WorkspaceManager`: Zuordnung, Wechsel, Verschieben, Holen |

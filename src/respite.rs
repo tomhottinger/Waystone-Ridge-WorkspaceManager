@@ -15,6 +15,10 @@ pub struct RespiteSchedule {
     end_mins: u16,
     /// Anzeigename für das Overlay.
     pub label: String,
+    /// Slot-spezifische Mindestwartezeit (überschreibt globalen Wert wenn gesetzt).
+    pub min_wait_secs: Option<u32>,
+    /// Slot-spezifische Sequenzlänge (überschreibt globalen Wert wenn gesetzt).
+    pub escape_len: Option<usize>,
 }
 
 /// Parst eine Liste von `RespiteConfig`s. Ungültige Einträge werden übersprungen.
@@ -49,6 +53,8 @@ fn parse_one(c: &RespiteConfig) -> Option<RespiteSchedule> {
         start_mins,
         end_mins,
         label: c.label.clone().unwrap_or_else(|| "Pause".to_string()),
+        min_wait_secs: c.min_wait_secs,
+        escape_len: c.escape_len,
     })
 }
 
@@ -99,6 +105,21 @@ pub fn active_slot(schedules: &[RespiteSchedule]) -> Option<&RespiteSchedule> {
     schedules.iter().find(|s| {
         (s.days & today_bit) != 0 && now_mins >= s.start_mins && now_mins < s.end_mins
     })
+}
+
+/// Verbleibende Sekunden bis zum Ende des aktiven Slots.
+pub fn remaining_secs(slot: &RespiteSchedule) -> u32 {
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let st = unsafe { GetLocalTime() };
+    let now_secs =
+        st.wHour as u32 * 3600 + st.wMinute as u32 * 60 + st.wSecond as u32;
+    let end_secs = slot.end_mins as u32 * 60;
+    end_secs.saturating_sub(now_secs)
+}
+
+/// Formatiert Sekunden als "MM:SS"-Countdown.
+pub fn format_remaining(secs: u32) -> String {
+    format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
 /// Formatiert die Endzeit eines Slots als "HH:MM".

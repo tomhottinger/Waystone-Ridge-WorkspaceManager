@@ -31,9 +31,9 @@ use ::windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use ::windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use ::windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, KillTimer, PostQuitMessage, RegisterClassW, SetTimer, SetWindowLongPtrW,
-    TranslateMessage, CW_USEDEFAULT, GWLP_USERDATA, HHOOK, HMENU, MSG, WINDOW_EX_STYLE,
-    WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
+    GetWindowLongPtrW, KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer,
+    SetWindowLongPtrW, TranslateMessage, CW_USEDEFAULT, GWLP_USERDATA, HHOOK, HMENU, MSG,
+    WINDOW_EX_STYLE, WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
 };
 
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
@@ -91,6 +91,22 @@ struct AppState {
     respite_schedules: Vec<respite::RespiteSchedule>,
     /// Ob gerade ein Respite-Zeitfenster aktiv ist.
     respite_active: bool,
+    /// Gesetzt, wenn der Nutzer Respite im aktuellen Slot per Breakout beendet hat.
+    respite_escaped_this_slot: bool,
+    /// Globale Breakout-Konfiguration (Defaults, können pro Slot überschrieben werden).
+    breakout: config::BreakoutConfig,
+    /// Effektive Mindestwartezeit des aktuell laufenden Slots.
+    respite_current_min_wait_secs: u32,
+    /// Effektive Sequenzlänge des aktuell laufenden Slots.
+    respite_current_escape_len: usize,
+    /// Zufällig generierte Zeichensequenz für den aktuellen Respite-Slot.
+    respite_escape_sequence: String,
+    /// Bisher korrekt eingetippte Zeichen der Escape-Sequenz.
+    respite_typed: String,
+    /// Zeitpunkt des Respite-Starts (für Mindestwartezeit).
+    respite_start_instant: Option<std::time::Instant>,
+    /// Ob die Mindestwartezeit abgelaufen und der Breakout entsperrt ist.
+    respite_escape_unlocked: bool,
     /// Pfad zur geladenen Konfigurationsdatei.
     config_file_path: PathBuf,
 }
@@ -170,7 +186,7 @@ fn run() -> Result<()> {
 
     let overlay = if cfg.show_overlay {
         let name = manager.name_of(manager.current);
-        match overlay::Overlay::create(&cfg.overlay_corner, &name) {
+        match overlay::Overlay::create_subtle(&cfg.overlay_corner, &name) {
             Ok(ov) => {
                 tracing::info!("Desktop-Overlay aktiviert");
                 Some(ov)
@@ -234,14 +250,22 @@ fn run() -> Result<()> {
         info_dialog,
         respite_schedules,
         respite_active: false,
+        respite_escaped_this_slot: false,
+        breakout: cfg.respite_breakout.clone(),
+        respite_current_min_wait_secs: 0,
+        respite_current_escape_len: 0,
+        respite_escape_sequence: String::new(),
+        respite_typed: String::new(),
+        respite_start_instant: None,
+        respite_escape_unlocked: false,
         config_file_path,
     });
     let state_ptr = Box::into_raw(state);
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
         (*state_ptr).refresh_tray();
-        // Respite alle 10 Sekunden prüfen.
-        SetTimer(hwnd, TIMER_RESPITE, 10_000, None);
+        // Respite sekündlich prüfen (Countdown im Overlay).
+        SetTimer(hwnd, TIMER_RESPITE, 1_000, None);
     }
 
     tracing::info!("Bereit. Hotkeys aktiv, Tray-Icon angelegt.");
@@ -328,16 +352,12 @@ fn reload_config(state: &mut AppState) {
     // Alle Fenster wieder sichtbar machen, bevor der Zustand ersetzt wird.
     state.manager.show_all();
 
-    // Respite deaktivieren.
-    hook::set_respite_active(false);
-    state.respite_active = false;
-    state.respite_overlay = None;
-    if let Some(h) = state.respite_keyboard_hook.take() {
-        hook::uninstall(h);
+    // Respite vollständig deaktivieren.
+    if state.respite_active {
+        deactivate_respite(state);
     }
-    if let Some(h) = state.mouse_hook.take() {
-        hook::uninstall_mouse(h);
-    }
+    state.respite_escaped_this_slot = false;
+    state.respite_escape_sequence = String::new();
 
     // Keyboard-Hook und Hotkeys deregistrieren.
     if let Some(h) = state.keyboard_hook.take() {
@@ -387,22 +407,111 @@ fn reload_config(state: &mut AppState) {
     // Overlay aktualisieren.
     state.overlay = if cfg.show_overlay {
         let name = state.manager.name_of(state.manager.current);
-        overlay::Overlay::create(&cfg.overlay_corner, &name).ok()
+        overlay::Overlay::create_subtle(&cfg.overlay_corner, &name).ok()
     } else {
         None
     };
 
-    // Respite-Zeitpläne neu laden.
+    // Respite-Konfiguration neu laden.
     state.respite_schedules = respite::parse(&cfg.respite);
+    state.breakout = cfg.respite_breakout.clone();
 
     state.refresh_tray();
     tracing::info!("Konfiguration erfolgreich neu geladen");
 }
 
+/// Erzeugt eine zufällige Sequenz aus Kleinbuchstaben und Ziffern.
+fn generate_escape_sequence(len: usize) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(31337);
+    let chars: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    (0..len)
+        .map(|_| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            chars[(state >> 33) as usize % chars.len()] as char
+        })
+        .collect()
+}
+
+/// Beendet die aktive Respite-Sperre und räumt alle zugehörigen Ressourcen auf.
+fn deactivate_respite(state: &mut AppState) {
+    state.respite_active = false;
+    state.respite_escape_unlocked = false;
+    state.respite_start_instant = None;
+    state.respite_typed = String::new();
+    hook::set_respite_active(false);
+    hook::set_respite_escape_unlocked(false);
+    if let Some(h) = state.respite_keyboard_hook.take() {
+        hook::uninstall(h);
+    }
+    if let Some(h) = state.mouse_hook.take() {
+        hook::uninstall_mouse(h);
+    }
+    state.respite_overlay = None;
+    if let Some(ref ov) = state.overlay {
+        ov.update(&state.manager.name_of(state.manager.current));
+    }
+}
+
+/// Aktualisiert den Overlay-Text und entsperrt ggf. den Notausgang.
+fn update_respite_overlay(state: &mut AppState) {
+    let slot = match respite::active_slot(&state.respite_schedules) {
+        Some(s) => s,
+        None => return,
+    };
+    let secs_remaining = respite::remaining_secs(slot);
+    let countdown = respite::format_remaining(secs_remaining);
+    let elapsed = state.respite_start_instant
+        .map(|i| i.elapsed().as_secs())
+        .unwrap_or(0);
+
+    let text = if elapsed < state.respite_current_min_wait_secs as u64 {
+        let wait_left = state.respite_current_min_wait_secs as u64 - elapsed;
+        format!(
+            "{}\nnoch {}\n\nBreakout in {} verfügbar",
+            slot.label,
+            countdown,
+            respite::format_remaining(wait_left as u32)
+        )
+    } else {
+        // Mindestwartezeit abgelaufen – Breakout entsperren.
+        if !state.respite_escape_unlocked {
+            state.respite_escape_unlocked = true;
+            hook::set_respite_escape_unlocked(true);
+        }
+        let seq = &state.respite_escape_sequence;
+        let typed = &state.respite_typed;
+        if typed.is_empty() {
+            format!("{}\nnoch {}\n\nTippe zum Beenden:\n{}", slot.label, countdown, seq)
+        } else {
+            let remaining_underscores = "_".repeat(seq.len() - typed.len());
+            format!(
+                "{}\nnoch {}\n\nTippe zum Beenden:\n{}\n{}{}",
+                slot.label, countdown, seq, typed, remaining_underscores
+            )
+        }
+    };
+
+    if let Some(ref ov) = state.respite_overlay {
+        ov.update(&text);
+    }
+}
+
 /// Prüft, ob ein Respite-Zeitfenster beginnt oder endet, und reagiert entsprechend.
 fn check_respite(state: &mut AppState) {
     let slot = respite::active_slot(&state.respite_schedules);
-    let should_be_active = slot.is_some();
+    let slot_active = slot.is_some();
+
+    // Wenn das Zeitfenster vorbei ist, Escape-Flag zurücksetzen.
+    if !slot_active {
+        state.respite_escaped_this_slot = false;
+    }
+
+    let should_be_active = slot_active && !state.respite_escaped_this_slot;
 
     if should_be_active == state.respite_active {
         return;
@@ -413,8 +522,23 @@ fn check_respite(state: &mut AppState) {
 
     if should_be_active {
         let slot = slot.unwrap();
-        let msg = format!("{} – bis {}", slot.label, respite::format_end(slot));
-        tracing::info!("Respite beginnt: {}", msg);
+        tracing::info!("Respite beginnt: {} (bis {})", slot.label, respite::format_end(slot));
+
+        // Effektive Breakout-Werte: Slot-Override hat Vorrang vor globalem Default.
+        state.respite_current_min_wait_secs = slot
+            .min_wait_secs
+            .unwrap_or(state.breakout.min_wait_secs);
+        state.respite_current_escape_len = slot
+            .escape_len
+            .unwrap_or(state.breakout.escape_len)
+            .max(1);
+
+        // Escape-Sequenz für diesen Slot frisch erzeugen.
+        state.respite_escape_sequence = generate_escape_sequence(state.respite_current_escape_len);
+        state.respite_typed = String::new();
+        state.respite_start_instant = Some(std::time::Instant::now());
+        state.respite_escape_unlocked = false;
+        hook::set_respite_escape_unlocked(false);
 
         // Keyboard-Hook installieren, falls noch keiner läuft.
         if state.keyboard_hook.is_none() && state.respite_keyboard_hook.is_none() {
@@ -430,31 +554,31 @@ fn check_respite(state: &mut AppState) {
             Err(e) => tracing::warn!("Respite-Maus-Hook nicht installierbar: {}", e),
         }
 
-        // Overlay mit Respite-Meldung aktualisieren oder temporäres anlegen.
-        if let Some(ref ov) = state.overlay {
-            ov.update(&msg);
-        } else {
-            match overlay::Overlay::create(&config::OverlayCorner::default(), &msg) {
-                Ok(ov) => state.respite_overlay = Some(ov),
-                Err(e) => tracing::warn!("Respite-Overlay konnte nicht erstellt werden: {}", e),
-            }
+        // Prominentes Overlay mit initialem Text anlegen.
+        let initial = format!(
+            "{}\nnoch {}\n\nBreakout in {} verfügbar",
+            slot.label,
+            respite::format_remaining(respite::remaining_secs(slot)),
+            respite::format_remaining(state.respite_current_min_wait_secs)
+        );
+        match overlay::Overlay::create_prominent(&initial) {
+            Ok(ov) => state.respite_overlay = Some(ov),
+            Err(e) => tracing::warn!("Respite-Overlay konnte nicht erstellt werden: {}", e),
         }
     } else {
         tracing::info!("Respite endet");
+        state.respite_start_instant = None;
+        state.respite_typed = String::new();
+        state.respite_escape_unlocked = false;
+        hook::set_respite_escape_unlocked(false);
 
-        // Respite-spezifische Hooks entfernen.
         if let Some(h) = state.respite_keyboard_hook.take() {
             hook::uninstall(h);
         }
         if let Some(h) = state.mouse_hook.take() {
             hook::uninstall_mouse(h);
         }
-
-        // Temporäres Overlay entfernen; normales Overlay zurücksetzen.
         state.respite_overlay = None;
-        if let Some(ref ov) = state.overlay {
-            ov.update(&state.manager.name_of(state.manager.current));
-        }
     }
 }
 
@@ -812,7 +936,11 @@ unsafe extern "system" fn wndproc(
             if wparam.0 == TIMER_RESPITE {
                 let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
                 if !state_ptr.is_null() {
-                    check_respite(&mut *state_ptr);
+                    let state = &mut *state_ptr;
+                    check_respite(state);
+                    if state.respite_active {
+                        update_respite_overlay(state);
+                    }
                 }
             }
             LRESULT(0)
@@ -821,22 +949,40 @@ unsafe extern "system" fn wndproc(
             let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
             if !state_ptr.is_null() {
                 let state = &mut *state_ptr;
-                tracing::info!("Respite-Notausgang (Ctrl+Alt+Shift+Escape) betätigt");
-                // Respite sofort beenden, auch wenn das Zeitfenster noch aktiv wäre.
-                // check_respite wird beim nächsten Timer-Tick wieder prüfen.
                 if state.respite_active {
-                    state.respite_active = false; // kurz auf false setzen
-                    hook::set_respite_active(false);
-                    // Hooks deinstallieren
-                    if let Some(h) = state.respite_keyboard_hook.take() {
-                        hook::uninstall(h);
-                    }
-                    if let Some(h) = state.mouse_hook.take() {
-                        hook::uninstall_mouse(h);
-                    }
-                    state.respite_overlay = None;
-                    if let Some(ref ov) = state.overlay {
-                        ov.update(&state.manager.name_of(state.manager.current));
+                    tracing::info!("Respite-Notausgang: Sequenz korrekt eingegeben");
+                    state.respite_escaped_this_slot = true;
+                    deactivate_respite(state);
+                }
+            }
+            LRESULT(0)
+        }
+        hook::WM_APP_RESPITE_KEYCHAR => {
+            let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState;
+            if !state_ptr.is_null() {
+                let state = &mut *state_ptr;
+                if state.respite_active && state.respite_escape_unlocked {
+                    let ch = char::from_u32(wparam.0 as u32).unwrap_or('\0');
+                    let expected = state.respite_escape_sequence
+                        .chars()
+                        .nth(state.respite_typed.len());
+                    if Some(ch) == expected {
+                        state.respite_typed.push(ch);
+                        if state.respite_typed == state.respite_escape_sequence {
+                            // Sequenz vollständig → Escape auslösen.
+                            let _ = PostMessageW(
+                                hwnd,
+                                hook::WM_APP_RESPITE_ESCAPE,
+                                WPARAM(0),
+                                LPARAM(0),
+                            );
+                        } else {
+                            update_respite_overlay(state);
+                        }
+                    } else if !state.respite_typed.is_empty() {
+                        // Falsches Zeichen → von vorne.
+                        state.respite_typed = String::new();
+                        update_respite_overlay(state);
                     }
                 }
             }

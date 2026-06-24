@@ -78,11 +78,51 @@ overlay_corner = "top_right"
 
 ---
 
+## Respite – Zeitgesteuerte Pause
+
+Respite sperrt Maus und Tastatur vollständig für ein konfiguriertes Zeitfenster — ideal als erzwungene Bildschirmpause. Während einer aktiven Sperre erscheint ein großes, zentriertes Overlay mit dem Pausennamen und einem Countdown.
+
+**Notausgang:** `Ctrl+Alt+Shift+Delete` bricht die laufende Sperre sofort ab.
+
+Konfiguriert werden mehrere `[[respite]]`-Blöcke in `config.toml`:
+
+```toml
+[[respite]]
+label = "Mittagspause"
+days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+start = "12:00"
+end   = "12:15"
+
+[[respite]]
+label = "Nachmittagspause"
+days  = ["Mon", "Tue", "Wed", "Thu"]
+start = "15:30"
+end   = "15:45"
+```
+
+Jeder Block definiert ein eigenständiges Zeitfenster; beliebig viele Blöcke sind möglich. Wird kein `[[respite]]`-Block angegeben, ist die Funktion deaktiviert.
+
+---
+
 ## Konfiguration
 
-Beim ersten Start wird `config.toml` **neben der EXE** erzeugt — vollständig kommentiert, mit allen Optionen und Erklärungen. Kein separater Download nötig: einfach starten, die erzeugte Datei öffnen und anpassen.
+Beim ersten Start wird `config.toml` **neben der EXE** erzeugt — vollständig kommentiert einfach starten, die erzeugte Datei öffnen und anpassen.
+
+Das Tray-Icon enthält ein **Konfigurationsmenü** (Rechtsklick → Konfiguration):
+
+
+
+Konfigurationsfile öffnen -->  Öffnet `config.toml` im Standard-Texteditor 
+
+
+neu einlesen --> Lädt die Konfiguration sofort neu — kein Neustart nötig
+
+
+
 
 Mit `--config <Pfad>` kann auch eine andere Konfigurationsdatei angegeben werden.
+
+
 
 ---
 

@@ -6,6 +6,10 @@
 # Diese Datei wird beim ersten Start automatisch neben der EXE erzeugt.
 # Sie zeigt alle verfügbaren Optionen mit Erklärungen und kann frei angepasst werden.
 # Mit --config <Pfad> kann auch ein anderer Pfad angegeben werden.
+#
+# Tray-Icon → Konfiguration:
+#   "Konfigurationsfile öffnen"  – öffnet diese Datei im Standard-Texteditor
+#   "neu einlesen"               – lädt die Konfiguration sofort neu (kein Neustart)
 
 
 # -----------------------------------------------------------------------------
@@ -50,9 +54,9 @@ move_window_follow = true
 # -----------------------------------------------------------------------------
 # Respite – Zeitgesteuerte Eingabesperre
 # Definiert Zeitfenster, in denen Maus und Tastatur vollständig gesperrt sind.
-# Kein Eintrag = Respite deaktiviert.
+# Kein [[respite]]-Block = Respite deaktiviert.
 #
-# Felder:
+# Felder pro [[respite]]-Block:
 #   label – Anzeigename im Overlay während der Sperre (Standard: "Pause")
 #   days  – Wochentage (Mehrfachauswahl möglich):
 #             Englisch: "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
@@ -60,38 +64,61 @@ move_window_follow = true
 #   start – Beginn der Sperre im Format "HH:MM"
 #   end   – Ende der Sperre im Format "HH:MM"
 #
-# Mehrere Pausen: einfach mehrere [[respite]]-Blöcke untereinander schreiben.
-# Jeder Block definiert ein eigenständiges Zeitfenster; sie können sich nicht
-# überschneiden, können aber unterschiedliche Tage und Zeiten haben.
+# Während der Sperre zeigt ein großes Overlay den Pausennamen und einen
+# Countdown der verbleibenden Zeit.
 #
-# Notausgang: Ctrl+Alt+Shift+Escape bricht die aktive Sperre sofort ab.
+# Mehrere Pausen: einfach mehrere [[respite]]-Blöcke untereinander schreiben.
+# Jeder Block ist unabhängig; bei Überschneidungen gilt der erste passende Block.
+#
+# Notausgang – zwei Stufen:
+#   1. Mindestwartezeit muss ablaufen (respite_min_wait_secs, Standard: 6 Minuten).
+#      Während der Wartezeit ist kein Abbruch möglich.
+#   2. Danach muss eine zufällige Zeichensequenz vollständig abgetippt werden
+#      (respite_escape_len Zeichen, a–z und 0–9).
+#      Falsches Zeichen → Eingabe beginnt von vorne.
+#      Korrekte Sequenz → Sperre endet für den Rest des Zeitfensters.
+#
+# Breakout-Einstellungen – globale Defaults (können pro [[respite]]-Block
+# überschrieben werden mit min_wait_secs und escape_len direkt im Block):
+#
+# [respite_breakout]
+# min_wait_secs = 360   # Sekunden warten bevor Breakout verfügbar (Standard: 360 = 6 Min)
+#                       # 0 = sofort verfügbar (kein Pflicht-Warten)
+# escape_len    = 12    # Länge der abzutippenden Zeichensequenz (Standard: 12, Min: 1)
 # -----------------------------------------------------------------------------
 
-# Morgendliche Bildschirmpause – Mo bis Fr, 5 Minuten nach dem Start
+[respite_breakout]
+min_wait_secs = 60   # nur 10 Sekunden warten (zum Testen)
+escape_len    = 12    # kurze Sequenz (zum Testen)
+
+
+# Morgendliche Bildschirmpause – Mo bis Fr
 # [[respite]]
 # label = "Morgenrunde"
 # days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 # start = "09:00"
 # end   = "09:05"
 
-# Mittagspause – Mo bis Fr
+# Mittagspause – Mo bis Fr (überschreibt globale Breakout-Werte für diesen Block)
 # [[respite]]
-# label = "Mittagspause"
-# days  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
-# start = "12:00"
-# end   = "12:15"
+# label         = "Mittagspause"
+# days          = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+# start         = "12:00"
+# end           = "12:15"
+# min_wait_secs = 600   # 10 Minuten Pflicht-Warten (Overrride)
+# escape_len    = 20    # lange Sequenz (Overrride)
 
-# Nachmittagspause – Mo bis Do (Freitag kürzer)
+# Nachmittagspause – Mo bis Do (deutsche Kürzel funktionieren auch)
 # [[respite]]
 # label = "Nachmittagspause"
-# days  = ["Mon", "Tue", "Wed", "Thu"]
+# days  = ["Mo", "Di", "Mi", "Do"]
 # start = "15:30"
 # end   = "15:45"
 
 # Freitags-Ausklang – nur Freitags, etwas früher
 # [[respite]]
 # label = "Freitags-Pause"
-# days  = ["Fri"]
+# days  = ["Fr"]
 # start = "15:00"
 # end   = "15:10"
 

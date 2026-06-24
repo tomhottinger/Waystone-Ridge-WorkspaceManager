@@ -65,6 +65,34 @@ fn default_quick_input_font_size() -> u32 {
     0
 }
 
+fn default_breakout_min_wait_secs() -> u32 {
+    360
+}
+
+fn default_breakout_escape_len() -> usize {
+    12
+}
+
+/// Globale Breakout-Einstellungen für den Respite-Notausgang.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BreakoutConfig {
+    /// Sekunden, die mindestens gewartet werden muss, bevor der Breakout aktivierbar ist.
+    #[serde(default = "default_breakout_min_wait_secs")]
+    pub min_wait_secs: u32,
+    /// Länge der abzutippenden Zeichensequenz.
+    #[serde(default = "default_breakout_escape_len")]
+    pub escape_len: usize,
+}
+
+impl Default for BreakoutConfig {
+    fn default() -> Self {
+        Self {
+            min_wait_secs: default_breakout_min_wait_secs(),
+            escape_len: default_breakout_escape_len(),
+        }
+    }
+}
+
 /// Konfiguration eines einzelnen Respite-Zeitfensters.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RespiteConfig {
@@ -78,6 +106,12 @@ pub struct RespiteConfig {
     pub start: String,
     /// Ende der Sperre im Format "HH:MM".
     pub end: String,
+    /// Überschreibt [respite_breakout].min_wait_secs für diesen Block.
+    #[serde(default)]
+    pub min_wait_secs: Option<u32>,
+    /// Überschreibt [respite_breakout].escape_len für diesen Block.
+    #[serde(default)]
+    pub escape_len: Option<usize>,
 }
 
 /// Gesamte Konfiguration.
@@ -112,6 +146,9 @@ pub struct Config {
     /// Zeitgesteuerte Eingabesperren.
     #[serde(default)]
     pub respite: Vec<RespiteConfig>,
+    /// Globale Breakout-Einstellungen für alle Respite-Sperren.
+    #[serde(default)]
+    pub respite_breakout: BreakoutConfig,
 }
 
 /// Pfad zur `config.toml` neben der ausführbaren Datei.

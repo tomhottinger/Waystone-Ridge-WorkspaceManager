@@ -1,61 +1,104 @@
-//! Permanentes Desktop-Overlay: always-on-top, halbtransparent, zeigt den
-//! aktuellen Workspace-Namen. Wird nur erzeugt wenn `show_overlay = true` in
-//! der config.toml gesetzt ist.
+//! Overlay-Fenster in zwei Varianten:
+//!  – **Subtle**: kleines, dezentes Eck-Overlay für Workspace-Namen
+//!  – **Prominent**: großes, zentriertes Overlay für Respite-Meldungen
+//!
+//! Jede Instanz trägt ihre eigenen Zeichendaten (Text + Stil) über
+//! `GWLP_USERDATA`, sodass beide Varianten gleichzeitig existieren können.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect,
-    SelectObject, SetBkMode, SetTextColor, TextOutW, BACKGROUND_MODE, HGDIOBJ, PAINTSTRUCT,
+    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
+    InvalidateRect, SelectObject, SetBkMode, SetTextColor, TextOutW,
+    BACKGROUND_MODE, DT_CENTER, DT_NOPREFIX, DT_WORDBREAK, HDC, HGDIOBJ, PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, RegisterClassW,
-    SetLayeredWindowAttributes, ShowWindow, SystemParametersInfoW, HMENU,
-    LAYERED_WINDOW_ATTRIBUTES_FLAGS, SHOW_WINDOW_CMD, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    WM_ERASEBKGND, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
+    RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW, ShowWindow,
+    SystemParametersInfoW, GWLP_USERDATA, HMENU, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
+    SHOW_WINDOW_CMD, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_ERASEBKGND,
+    WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 use crate::config::OverlayCorner;
 
-const WIN_W: i32 = 240;
-const WIN_H: i32 = 48;
-const MARGIN: i32 = 20;
-/// Hintergrundfarbe (BGR): dunkles Schieferblau.
-const BG_COLOR: u32 = 0x00_3A_28_1E;
-/// Schriftfarbe: weiß.
-const FG_COLOR: u32 = 0x00_FF_FF_FF;
-/// Globale Alpha-Deckkraft (0=transparent … 255=opak).
-const ALPHA: u8 = 210;
+// ── Dezentes Eck-Overlay (Workspace-Namen) ────────────────────────────────────
 
-/// Gemeinsamer Speicher für den anzuzeigenden Text (wird aus dem Haupt-Thread
-/// geschrieben und aus dem Overlay-WndProc auf dem selben Thread gelesen).
-static LABEL: OnceLock<Mutex<String>> = OnceLock::new();
+const SUBTLE_W: i32 = 240;
+const SUBTLE_H: i32 = 48;
+const SUBTLE_MARGIN: i32 = 20;
+/// BGR: dunkles Schiefergrau (R=52, G=58, B=68).
+const SUBTLE_BG: u32 = 0x00_44_3A_34;
+/// Schrift: weiß.
+const SUBTLE_FG: u32 = 0x00_FF_FF_FF;
+/// Alpha: leicht transparent.
+const SUBTLE_ALPHA: u8 = 210;
+const SUBTLE_FONT_H: i32 = 24;
 
-fn label_mutex() -> &'static Mutex<String> {
-    LABEL.get_or_init(|| Mutex::new(String::new()))
+// ── Prominentes Zentrum-Overlay (Respite-Meldungen) ───────────────────────────
+
+const PROM_W: i32 = 720;
+const PROM_H: i32 = 320;
+/// BGR: helles, warmes Cremeweiß (R=250, G=250, B=245).
+const PROM_BG: u32 = 0x00_F5_FA_FA;
+/// Schrift: fast schwarz.
+const PROM_FG: u32 = 0x00_1A_1A_1A;
+/// Alpha: nahezu vollständig opak.
+const PROM_ALPHA: u8 = 252;
+const PROM_FONT_H: i32 = 40;
+
+// ── Interne Fensterdaten ──────────────────────────────────────────────────────
+
+enum OverlayStyle {
+    Subtle,
+    Prominent,
 }
 
-/// Handle auf das Overlay-Fenster. Wird beim Beenden zerstört.
+struct WindowData {
+    text: Mutex<String>,
+    style: OverlayStyle,
+}
+
+// ── Öffentliche API ───────────────────────────────────────────────────────────
+
+/// Handle auf ein Overlay-Fenster.
 pub struct Overlay {
     hwnd: HWND,
+    /// Hält die Fensterdaten am Leben; der raw pointer davon steckt in GWLP_USERDATA.
+    _data: Box<WindowData>,
 }
 
 impl Overlay {
-    /// Erzeugt das Overlay-Fenster.
-    pub fn create(corner: &OverlayCorner, initial_text: &str) -> Result<Self> {
-        *label_mutex().lock().unwrap() = initial_text.to_string();
-        let hwnd = unsafe { create_window(corner)? };
-        Ok(Self { hwnd })
+    /// Kleines, dezentes Overlay in einer Bildschirmecke (Workspace-Anzeige).
+    pub fn create_subtle(corner: &OverlayCorner, initial_text: &str) -> Result<Self> {
+        let data = Box::new(WindowData {
+            text: Mutex::new(initial_text.to_string()),
+            style: OverlayStyle::Subtle,
+        });
+        let hwnd = unsafe { create_subtle_window(corner, &*data as *const WindowData)? };
+        Ok(Self { hwnd, _data: data })
     }
 
-    /// Aktualisiert den angezeigten Text und löst einen Neuzeichenvorgang aus.
+    /// Großes, zentriertes Overlay für Respite-Meldungen.
+    pub fn create_prominent(initial_text: &str) -> Result<Self> {
+        let data = Box::new(WindowData {
+            text: Mutex::new(initial_text.to_string()),
+            style: OverlayStyle::Prominent,
+        });
+        let hwnd = unsafe { create_prominent_window(&*data as *const WindowData)? };
+        Ok(Self { hwnd, _data: data })
+    }
+
+    /// Aktualisiert den angezeigten Text.
     pub fn update(&self, text: &str) {
-        *label_mutex().lock().unwrap() = text.to_string();
+        if let Ok(mut g) = self._data.text.lock() {
+            *g = text.to_string();
+        }
         unsafe {
             let _ = InvalidateRect(self.hwnd, None, true);
         }
@@ -70,120 +113,184 @@ impl Drop for Overlay {
     }
 }
 
-unsafe fn create_window(corner: &OverlayCorner) -> Result<HWND> {
-    let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
-    let class_name = w!("WaystoneOverlay");
+// ── Fenstererzeugung ──────────────────────────────────────────────────────────
 
+/// Registriert die Fensterklasse (einmalig; Doppelregistrierung wird ignoriert).
+unsafe fn ensure_class(hinstance: HINSTANCE) {
     let wc = WNDCLASSW {
         lpfnWndProc: Some(wndproc),
         hInstance: hinstance,
-        lpszClassName: class_name,
+        lpszClassName: w!("WaystoneOverlay"),
         ..Default::default()
     };
-    // Fehler ignorieren – Klasse ist nach dem ersten Aufruf bereits registriert.
     let _ = RegisterClassW(&wc);
+}
 
-    // Arbeitsbereich (ohne Taskleiste) für Positionierung verwenden.
-    let mut work = RECT::default();
-    let _ = SystemParametersInfoW(
-        windows::Win32::UI::WindowsAndMessaging::SPI_GETWORKAREA,
-        0,
-        Some(&mut work as *mut RECT as *mut std::ffi::c_void),
-        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-    );
+/// Gemeinsame Hilfsfunktion: erstellt ein Overlay-Fenster und setzt GWLP_USERDATA.
+unsafe fn make_window(
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    alpha: u8,
+    data_ptr: *const WindowData,
+) -> Result<HWND> {
+    let hinstance = HINSTANCE(GetModuleHandleW(None)?.0);
+    ensure_class(hinstance);
 
-    let (x, y) = corner_pos(corner, &work);
-
-    let ex_style = WS_EX_TOPMOST
-        | WS_EX_LAYERED
-        | WS_EX_TRANSPARENT
-        | WS_EX_NOACTIVATE
-        | WS_EX_TOOLWINDOW;
+    let ex_style =
+        WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
 
     let hwnd = CreateWindowExW(
         ex_style,
-        class_name,
+        w!("WaystoneOverlay"),
         w!(""),
         WS_POPUP,
         x,
         y,
-        WIN_W,
-        WIN_H,
+        w,
+        h,
         HWND::default(),
         HMENU::default(),
         hinstance,
         None,
     )?;
 
-    // Globale Deckkraft über LWA_ALPHA setzen.
-    let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), ALPHA, LAYERED_WINDOW_ATTRIBUTES_FLAGS(2));
-
-    // Fenster anzeigen, ohne es zu aktivieren (SW_SHOWNOACTIVATE = 4).
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, data_ptr as isize);
+    let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LAYERED_WINDOW_ATTRIBUTES_FLAGS(2));
+    // SW_SHOWNOACTIVATE = 4
     let _ = ShowWindow(hwnd, SHOW_WINDOW_CMD(4));
 
     Ok(hwnd)
 }
 
-fn corner_pos(corner: &OverlayCorner, work: &RECT) -> (i32, i32) {
-    let center_x = work.left + (work.right - work.left - WIN_W) / 2;
+unsafe fn work_area() -> RECT {
+    let mut work = RECT::default();
+    let _ = SystemParametersInfoW(
+        SPI_GETWORKAREA,
+        0,
+        Some(&mut work as *mut RECT as *mut std::ffi::c_void),
+        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+    );
+    work
+}
+
+unsafe fn create_subtle_window(corner: &OverlayCorner, data_ptr: *const WindowData) -> Result<HWND> {
+    let work = work_area();
+    let (x, y) = subtle_corner_pos(corner, &work);
+    make_window(x, y, SUBTLE_W, SUBTLE_H, SUBTLE_ALPHA, data_ptr)
+}
+
+unsafe fn create_prominent_window(data_ptr: *const WindowData) -> Result<HWND> {
+    let work = work_area();
+    let x = work.left + (work.right - work.left - PROM_W) / 2;
+    let y = work.top + (work.bottom - work.top - PROM_H) / 2;
+    make_window(x, y, PROM_W, PROM_H, PROM_ALPHA, data_ptr)
+}
+
+fn subtle_corner_pos(corner: &OverlayCorner, work: &RECT) -> (i32, i32) {
+    let cx = work.left + (work.right - work.left - SUBTLE_W) / 2;
     match corner {
-        OverlayCorner::TopLeft => (work.left + MARGIN, work.top + MARGIN),
-        OverlayCorner::TopCenter => (center_x, work.top + MARGIN),
-        OverlayCorner::TopRight => (work.right - WIN_W - MARGIN, work.top + MARGIN),
-        OverlayCorner::BottomLeft => (work.left + MARGIN, work.bottom - WIN_H - MARGIN),
-        OverlayCorner::BottomCenter => (center_x, work.bottom - WIN_H - MARGIN),
-        OverlayCorner::BottomRight => (work.right - WIN_W - MARGIN, work.bottom - WIN_H - MARGIN),
+        OverlayCorner::TopLeft => (work.left + SUBTLE_MARGIN, work.top + SUBTLE_MARGIN),
+        OverlayCorner::TopCenter => (cx, work.top + SUBTLE_MARGIN),
+        OverlayCorner::TopRight => (work.right - SUBTLE_W - SUBTLE_MARGIN, work.top + SUBTLE_MARGIN),
+        OverlayCorner::BottomLeft => (work.left + SUBTLE_MARGIN, work.bottom - SUBTLE_H - SUBTLE_MARGIN),
+        OverlayCorner::BottomCenter => (cx, work.bottom - SUBTLE_H - SUBTLE_MARGIN),
+        OverlayCorner::BottomRight => {
+            (work.right - SUBTLE_W - SUBTLE_MARGIN, work.bottom - SUBTLE_H - SUBTLE_MARGIN)
+        }
     }
 }
+
+// ── Fensterprozedur ───────────────────────────────────────────────────────────
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_ERASEBKGND => LRESULT(1),
         WM_PAINT => {
+            let data_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowData;
+            if data_ptr.is_null() {
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
+            }
+            let data = &*data_ptr;
+
+            let text = data.text.lock().map(|g| g.clone()).unwrap_or_default();
+            let text_w: Vec<u16> = text.encode_utf16().collect();
+
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
 
             let mut rc = RECT::default();
             let _ = GetClientRect(hwnd, &mut rc);
 
-            // Hintergrund füllen.
-            let bg = CreateSolidBrush(COLORREF(BG_COLOR));
-            FillRect(hdc, &rc, bg);
-            let _ = DeleteObject(HGDIOBJ(bg.0));
+            match data.style {
+                OverlayStyle::Subtle => paint_subtle(hdc, &rc, &text_w),
+                OverlayStyle::Prominent => paint_prominent(hdc, &rc, &text_w),
+            }
 
-            // Text lesen und zeichnen.
-            let text = label_mutex().lock().unwrap().clone();
-            let text_w: Vec<u16> = text.encode_utf16().collect();
-
-            let font_h: i32 = 24;
-            let font = CreateFontW(
-                font_h,
-                0,
-                0,
-                0,
-                700, // FW_BOLD
-                0,
-                0,
-                0,
-                1, // DEFAULT_CHARSET
-                0,
-                0,
-                5, // CLEARTYPE_QUALITY
-                0,
-                w!("Segoe UI"),
-            );
-            let old = SelectObject(hdc, HGDIOBJ(font.0));
-            SetBkMode(hdc, BACKGROUND_MODE(1)); // TRANSPARENT
-            SetTextColor(hdc, COLORREF(FG_COLOR));
-
-            let text_y = (WIN_H - font_h) / 2;
-            let _ = TextOutW(hdc, 14, text_y, &text_w);
-
-            SelectObject(hdc, old);
-            let _ = DeleteObject(HGDIOBJ(font.0));
             let _ = EndPaint(hwnd, &ps);
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
+}
+
+unsafe fn paint_subtle(hdc: HDC, rc: &RECT, text_w: &[u16]) {
+    let bg = CreateSolidBrush(COLORREF(SUBTLE_BG));
+    FillRect(hdc, rc, bg);
+    let _ = DeleteObject(HGDIOBJ(bg.0));
+
+    let font = CreateFontW(
+        SUBTLE_FONT_H, 0, 0, 0,
+        700, 0, 0, 0, 1, 0, 0, 5, 0,
+        w!("Segoe UI"),
+    );
+    let old = SelectObject(hdc, HGDIOBJ(font.0));
+    SetBkMode(hdc, BACKGROUND_MODE(1));
+    SetTextColor(hdc, COLORREF(SUBTLE_FG));
+
+    let text_y = (SUBTLE_H - SUBTLE_FONT_H) / 2;
+    let _ = TextOutW(hdc, 14, text_y, text_w);
+
+    SelectObject(hdc, old);
+    let _ = DeleteObject(HGDIOBJ(font.0));
+}
+
+unsafe fn paint_prominent(hdc: HDC, rc: &RECT, text_w: &[u16]) {
+    let bg = CreateSolidBrush(COLORREF(PROM_BG));
+    FillRect(hdc, rc, bg);
+    let _ = DeleteObject(HGDIOBJ(bg.0));
+
+    let font = CreateFontW(
+        PROM_FONT_H, 0, 0, 0,
+        700, 0, 0, 0, 1, 0, 0, 5, 0,
+        w!("Segoe UI"),
+    );
+    let old = SelectObject(hdc, HGDIOBJ(font.0));
+    SetBkMode(hdc, BACKGROUND_MODE(1));
+    SetTextColor(hdc, COLORREF(PROM_FG));
+
+    // Mehrzeiligen Text zentriert zeichnen; DrawTextW behandelt \n als Zeilenumbruch.
+    const PAD: i32 = 24;
+    let mut draw_rc = RECT {
+        left: rc.left + PAD,
+        top: rc.top + PAD,
+        right: rc.right - PAD,
+        bottom: rc.bottom - PAD,
+    };
+    // Erster Pass: Texthöhe berechnen.
+    let mut calc_rc = draw_rc;
+    let mut text_w_copy = text_w.to_vec();
+    DrawTextW(hdc, &mut text_w_copy, &mut calc_rc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | windows::Win32::Graphics::Gdi::DT_CALCRECT);
+    // Zweiter Pass: vertikal zentrieren und zeichnen.
+    let text_h = calc_rc.bottom - calc_rc.top;
+    let avail_h = draw_rc.bottom - draw_rc.top;
+    if text_h < avail_h {
+        draw_rc.top += (avail_h - text_h) / 2;
+    }
+    let mut text_w_draw = text_w.to_vec();
+    DrawTextW(hdc, &mut text_w_draw, &mut draw_rc, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+
+    SelectObject(hdc, old);
+    let _ = DeleteObject(HGDIOBJ(font.0));
 }
