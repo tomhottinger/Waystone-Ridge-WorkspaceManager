@@ -18,10 +18,12 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetWindowLongPtrW,
-    GetSystemMetrics, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW, ShowWindow,
-    SystemParametersInfoW, GWLP_USERDATA, HMENU, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-    SHOW_WINDOW_CMD, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_ERASEBKGND,
+    GetSystemMetrics, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, SystemParametersInfoW, GWLP_USERDATA, HMENU,
+    HWND_TOPMOST, LAYERED_WINDOW_ATTRIBUTES_FLAGS, SHOW_WINDOW_CMD,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SPI_GETWORKAREA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_ERASEBKGND,
     WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -100,6 +102,10 @@ impl Overlay {
             *g = text.to_string();
         }
         unsafe {
+            let _ = SetWindowPos(
+                self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
             let _ = InvalidateRect(self.hwnd, None, true);
         }
     }
